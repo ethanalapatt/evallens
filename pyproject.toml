@@ -1,0 +1,75 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "evallens"
+version = "0.1.0"
+description = "A local differential debugger for neural-network inference: detect output regressions, localize the earliest observed divergence, minimize failing inputs, and export standalone reproductions."
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+authors = [{ name = "Ethan Alapatt" }]
+keywords = ["debugging", "pytorch", "differential-testing", "delta-debugging", "evaluation"]
+classifiers = [
+  "Programming Language :: Python :: 3",
+  "Topic :: Software Development :: Testing",
+  "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+dependencies = [
+  "torch>=2.4,<3",
+  "numpy>=1.26,<3",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest>=8.0",
+  "hypothesis>=6.100",
+  "ruff>=0.6",
+  "mypy>=1.11",
+  "psutil>=5.9",
+]
+
+[project.scripts]
+evallens = "evallens.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+evallens = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+  "slow: tests that take more than a few seconds",
+  "mps: requires an available Apple MPS device (extension, not part of the CPU release)",
+  "download: requires network access to download a public model",
+]
+filterwarnings = ["error::DeprecationWarning:evallens.*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+src = ["src", "tests", "bench"]
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+"bench/mutants/*" = ["B", "SIM", "RUF"]
+"tests/*" = ["B011"]
+
+[tool.mypy]
+# Deliberately unset: numpy 2.5 type stubs use PEP 695 `type` statements, which mypy
+# only parses when targeting 3.12+. The runtime floor stays at 3.11 via requires-python.
+files = ["src/evallens"]
+strict = true
+warn_unreachable = true
+disallow_any_generics = false
+plugins = []
+
+[[tool.mypy.overrides]]
+module = ["torch.*", "psutil.*"]
+ignore_missing_imports = true

@@ -1,0 +1,43 @@
+# Default CPU profile. CPU is the required reference platform for EvalLens; MPS is an
+# extension and never contributes to the primary result.
+
+[execution]
+device = "cpu"
+dtype = "float32"
+threads = 4              # pinned so reduction order, and therefore the last bits, stay stable
+interop_threads = 1
+
+[fixture]
+name = "unit"            # "unit" -> tiny-2L-64d-4h; "scale" -> the optional ~11M check
+
+[tolerance]
+# violation = abs(candidate - reference) > atol + rtol * abs(reference)
+# Starting policy choice for CPU float32, not a universal mathematical truth.
+# Calibrated on known-good comparisons only, then frozen before held-out fault evaluation.
+name = "cpu_fp32_default"
+atol = 1e-5
+rtol = 1e-4
+zero_norm_eps = 1e-12    # below this reference L2 norm, report absolute L2 and flag it
+
+[stability]
+# A candidate failure must reproduce from clean state this many times to enter reduction.
+replays = 3
+
+[limits]
+max_tokens_per_request = 128
+max_batch_rows = 4
+max_session_requests = 3
+
+[resources]
+rss_limit_bytes = 4294967296   # 4 GiB design budget for combined worker RSS
+case_timeout_s = 30.0
+
+[reduction]
+max_predicate_queries = 256
+time_budget_s = 60.0
+
+[capture]
+# Diagnostic capture is bounded and runs in a separate pass; it is never part of the
+# detection timing path.
+max_checkpoints = 4096
+max_values_per_checkpoint = 4096

@@ -1,0 +1,38 @@
+# Environments
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+dist/
+
+# Tooling caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.hypothesis/
+.coverage
+htmlcov/
+
+# OS
+.DS_Store
+
+# Downloaded weights / model caches (never committed)
+models/
+*.bin
+*.safetensors
+hf_cache/
+
+# Run artifacts: scratch runs are ignored; curated evidence is force-added.
+artifacts/runs/*
+!artifacts/runs/.gitkeep
+artifacts/demo/
+artifacts/reduced/
+artifacts/repro/
+artifacts/scratch/
+
+# Oversized traces
+*.trace.jsonl
+*.npz.tmp
