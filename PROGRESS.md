@@ -7,8 +7,8 @@ Actual state of the build. Status values are `not started`, `in progress`, `bloc
 |---|---|
 | M1 — repository, environment, reference fixture | **complete** |
 | M2 — adapters and numerical comparator | **complete** |
-| M3 — fault corpus and generators | **in progress** |
-| M4 — checkpoint alignment and localization | not started |
+| M3 — fault corpus and generators | **complete** |
+| M4 — checkpoint alignment and localization | **in progress** |
 | M5 — input reduction and replay | not started |
 | M6 — portable reproduction and demo | not started |
 | M7 — benchmark and generated report | not started |
@@ -266,16 +266,151 @@ only held on hand-picked lengths would be worthless as a detection baseline.
 
 ---
 
-## M3 — fault corpus and generators — in progress
+## M3 — fault corpus and generators — complete (2026-09-11)
+
+### What was built
+
+- `bench/mutants/` — 8 families x 2 variants = 16 declared injected faults, each with a
+  **handwritten** trigger fixture and a recorded rationale for why that shape exposes the
+  mechanism. `qualify_mutant` decides inclusion; `qualify_all` reports every variant.
+- `bench/controls/` — 7 known-good comparisons covering identical implementations, correct
+  cached vs full-prefix execution, the prefill-only boundary, padded alignment, batch
+  permutation, fresh-request isolation, and one benign sub-tolerance perturbation.
+- `bench/seeds.py` — disjoint calibration / development / evaluation seed sets, with
+  disjointness asserted at import time.
+- `src/evallens/generate.py` — `UniformValidGenerator` (the named baseline) and
+  `BoundaryAwareGenerator`, over the same declared space, same capability, same budget, plus
+  six declared case categories and `classify_case`.
+
+### Commands actually run, and their output
+
+```
+$ .venv/bin/python -m pytest -q
+326 passed in 4.28s
+
+$ .venv/bin/python -m ruff check .
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check .
+45 files already formatted
+
+$ .venv/bin/python -m mypy src/evallens
+Success: no issues found in 16 source files
+
+$ .venv/bin/python -m mypy bench
+Success: no issues found in 4 source files
+```
+
+### Qualification: 16 of 16 declared variants qualified
+
+Each variant produced a **stable FAIL** across 3 replays against its own handwritten trigger,
+under the frozen policy `atol=1e-5, rtol=1e-4`. No tolerance was adjusted to obtain any of
+these. Max absolute error on the trigger case:
+
+| Family | Variant | max abs error |
+|---|---|---|
+| 1 causal mask | `off_by_one` | 2.772e-01 |
+| 1 causal mask | `leak_last` | 3.222e-01 |
+| 2 padding mask | `ignore` | 4.493e-01 |
+| 2 padding mask | `right_only` | 4.739e-01 |
+| 3 decode position | `minus_one` | 3.274e-01 |
+| 3 decode position | `restart` | 2.813e-01 |
+| 4 cache indexing | `write_overwrite_last` | 2.763e-01 |
+| 4 cache indexing | `read_drop_oldest` | 1.955e-01 |
+| 5 request reset | `none` | 4.008e-01 |
+| 5 request reset | `partial` | 1.964e-01 |
+| 6 normalization | `large_eps` | 6.332e-01 |
+| 6 normalization | `wrong_axis` | 7.659e-01 |
+| 7 attention scaling | `no_sqrt` | 7.668e-03 |
+| 7 attention scaling | `d_model` | 3.690e-03 |
+| 8 batch indexing | `row_leak_first` | 2.942e-01 |
+| 8 batch indexing | `v_roll` | 5.377e-01 |
+
+None of these is a detection rate. They are qualification checks on handwritten triggers: the
+variants do what they claim. Whether either *generator* can find them under budget is M7.
+
+The two attention-scaling variants are two orders of magnitude subtler than the rest, which
+is expected — a scale change perturbs every softmax slightly rather than corrupting a
+specific position — and makes them the most interesting variants for the detection study.
+
+### Controls: 7 of 7 are stable passes
+
+All under the same frozen policy, so the false-positive denominator is real.
+
+### Acceptance gate
+
+| Gate | Evidence |
+|---|---|
+| Every included fault is independently qualified by a valid trigger | 16 parametrized qualification tests, plus tests that each trigger case is itself valid and that the reference never fails one |
+| Generated cases are valid and repeatable | 4 unit tests x 2 generators over 120 cases each, plus 5 Hypothesis properties over arbitrary seeds and budgets |
+| Search policies cannot access fault labels | `tests/unit/test_search_policy_blindness.py` — AST scan for forbidden imports and names, a source scan for mutant identity strings, and a clean-subprocess check that importing the generator loads no `bench` module |
+
+### Evidence paths
+
+- `tests/integration/test_fault_corpus.py` — 58 tests: corpus shape, qualification, controls, seeds
+- `tests/unit/test_generators.py` — 35 tests: validity, determinism, coverage, diversity
+- `tests/unit/test_search_policy_blindness.py` — 7 blindness tests
+- `tests/property/test_generator_properties.py` — 9 Hypothesis properties
+
+### Teach-back
+
+**What was built.** Sixteen deliberate faults, each paired with a handwritten case proving it
+does what it claims; seven known-good comparisons that a correct implementation must pass;
+and two generators that explore the same valid space by different strategies under identical
+budgets.
+
+**Why this design.** The generators share a *category schedule* and differ only in their
+choices within it. That is the fair comparison: if the uniform baseline could not emit padded
+batches or sessions at all, it could never reach fault families 2, 5, or 8, and the
+boundary-aware generator's higher score would measure coverage rather than judgment. The
+blindness tests are structural rather than a convention in a docstring, because a search
+policy that can read the answer key is not being measured — it is being told. They check
+three independent ways: no forbidden import in the AST, no mutant identity in the source text,
+and no `bench` module in `sys.modules` after a clean-subprocess import.
+
+**One tricky failure.** Two failures, both caught by the tests rather than by inspection.
+The first: `request_reset.none` came back `INVALID` instead of `FAIL`. Its handwritten trigger
+used token 97, and the vocabulary is 97 tokens — valid ids run 0..96. Validation was right and
+the trigger was wrong, which is exactly the failure mode the "every trigger case is itself
+valid" test now guards: an invalid trigger would have scored as `INVALID` forever and quietly
+dropped a whole fault family from the corpus. The second: `BoundaryAwareGenerator` emitted a
+prefix length of 2 for a single-token request, because its boundary set `{1, 2, n-1, n}` is
+only sensible for `n >= 2`. Clamping every candidate into `[1, n]` fixed it. Both are the same
+underlying lesson — boundary values need to be clamped to the structure they describe, not
+assumed to fit it.
+
+**How it was tested.** Qualification is a test, not a report: all sixteen variants are
+parametrized, so a variant that stops failing breaks the build rather than silently dropping
+out of a manifest. Controls are tested with the same `stable_comparison` path the benchmark
+uses, so a false positive shows up as a failing test. The `benign_subtolerance_perturbation`
+control has a guard asserting the perturbation is genuinely nonzero *and* genuinely below
+tolerance, so it can never decay into a no-op that passes for the wrong reason.
+
+### Limitations at M3
+
+- Qualification uses handwritten triggers. It establishes that each variant is a real,
+  stable, shape-valid silent fault; it says nothing about whether a generator can find it
+  under budget. That is M7, and it is a separate question.
+- These are held-out executions of *known* fault families. They are not evidence of
+  generalization to unknown real-world bugs, and no report may present them as such.
+- Eight families is a narrow corpus. Uncertainty on any aggregate rate will be substantial.
+- Localization, reduction, export, and the benchmark harness do not exist yet.
+
+---
+
+## M4 — checkpoint alignment and localization — in progress
 
 ### Next exact action
 
-Build `bench/mutants/` (the sixteen declared variants, each with an independently written
-trigger fixture that demonstrates its intended fault), `bench/controls/` (the known-good
-comparisons), and `src/evallens/generate.py` with both generators — uniform-valid and
-boundary-aware — over the same declared valid-case space, plus disjoint calibration,
-development, and evaluation seed manifests.
+Implement `src/evallens/trace.py`: take a stable output failure, run a separate traced pass on
+both adapters, align checkpoints by `(request_id, layer_name, token_position, kind)`, and
+compare **all** aligned checkpoints in execution order — no binary search, because
+monotonicity cannot be assumed. Report the earliest *observed* divergence, and report
+`localization unavailable` when no checkpoints align.
 
-M3 acceptance gate: every included fault is independently qualified by a valid trigger;
-generated cases are valid and repeatable; and search policies cannot access fault labels.
-Neither generator is required to detect every fault under budget.
+Then add the crafted reconvergence case: an intermediate discrepancy that disappears before
+the output, which a first-divergence search assuming monotonicity would mis-handle.
+
+M4 acceptance gate: known injected examples localize to the expected exposed checkpoint;
+unavailable alignment is reported accurately; and capture neither leaks across runs nor
+silently enters only one timing baseline.

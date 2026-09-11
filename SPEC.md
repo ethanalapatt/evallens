@@ -3,7 +3,7 @@
 Resolved from the project brief. This is the contract the implementation is held to; where
 the brief left a choice open, the decision and its reason are recorded here.
 
-**Status:** M1 and M2 complete. Sections describing later milestones state the intended
+**Status:** M1–M3 complete. Sections describing later milestones state the intended
 design and are marked accordingly. Nothing in this document is a claim that unmeasured behavior has
 been measured.
 

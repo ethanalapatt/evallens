@@ -20,12 +20,19 @@ its own.
 
 ## Status
 
-M1 and M2 are complete: the reference fixture and its independent FP64 oracle, the case
-schema, the reference and candidate adapters, the numerical comparator, and stability replay
-all work and are tested on the target machine. Every known-good control passes — incremental
-cached decode matches a full-prefix forward pass at `max|Δ| = 2.4e-07`, and identical
-stateless implementations agree bitwise. M3 (the fault corpus and input generators) is in
-progress. `PROGRESS.md` tracks each milestone with the actual commands and their output.
+M1 through M3 are complete: the reference fixture and its independent FP64 oracle, the case
+schema, the reference and candidate adapters, the numerical comparator, stability replay, the
+injected-fault corpus, and the two input generators all work and are tested on the target
+machine.
+
+All 7 known-good controls are stable passes — incremental cached decode matches a full-prefix
+forward pass at `max|Δ| = 2.4e-07`, and identical stateless implementations agree bitwise. All
+16 declared fault variants qualify: each produces a stable, shape-valid, silent mismatch
+against its own handwritten trigger. Those are qualification checks, not detection rates —
+whether a *generator* finds them under budget is a separate question, measured in M7.
+
+M4 (checkpoint alignment and localization) is in progress. `PROGRESS.md` tracks each milestone
+with the actual commands and their output.
 
 ## Install and check
 
@@ -51,7 +58,7 @@ machine (Apple M3, macOS 15.6, Python 3.13.7, PyTorch 2.14.0, NumPy 2.5.3) it re
 .venv/bin/python -m mypy src/evallens
 ```
 
-199 tests pass at M2.
+326 tests pass at M3.
 
 ## How it works
 
