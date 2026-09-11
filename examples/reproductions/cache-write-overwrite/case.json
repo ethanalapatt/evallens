@@ -1,0 +1,27 @@
+{
+  "case_id": "case_7287c8c752e22ccf",
+  "category": "cached_decode",
+  "execution_mode": "cached_decode",
+  "input_seed": 20260911,
+  "model_config_id": "tiny-2L-64d-4h-89a0eb72a852",
+  "provenance": [
+    "uniform-valid@1",
+    "seed=20260911",
+    "index=4",
+    "r0: 14 -> 2 tokens",
+    "simplified 1 token value(s)"
+  ],
+  "requests": [
+    {
+      "pad_left": 0,
+      "prefix_length": 1,
+      "request_id": "r0",
+      "token_ids": [
+        21,
+        1
+      ]
+    }
+  ],
+  "schema_version": 1,
+  "weights_sha256": "e954a43b36aaeb31595503cc0c0b1aec430e920feddac0d02388bd0dd23f8530"
+}

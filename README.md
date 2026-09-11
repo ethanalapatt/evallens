@@ -31,7 +31,8 @@ forward pass at `max|Δ| = 2.4e-07`, and identical stateless implementations agr
 against its own handwritten trigger. Those are qualification checks, not detection rates —
 whether a *generator* finds them under budget is a separate question, measured in M7.
 
-M4 (localization) and M5 (reduction) are complete too: all 16 variants localize to a semantic checkpoint, and reduction shrinks failing cases by 20–31x while preserving the failure signature. M6 (portable reproduction and the demo) is in progress. `PROGRESS.md` tracks each milestone
+M4 (localization), M5 (reduction), and M6 (reproduction export and the demo) are complete too.
+M7 (the benchmark and its generated report) is in progress. `PROGRESS.md` tracks each milestone
 with the actual commands and their output.
 
 ## Install and check
@@ -58,7 +59,57 @@ machine (Apple M3, macOS 15.6, Python 3.13.7, PyTorch 2.14.0, NumPy 2.5.3) it re
 .venv/bin/python -m mypy src/evallens
 ```
 
-443 tests pass at M5.
+501 tests pass at M6.
+
+## See it work
+
+One command runs the whole pipeline against a **deliberately injected** cache fault and writes
+real artifacts:
+
+```bash
+.venv/bin/evallens demo --out artifacts/demo --config configs/cpu.toml
+```
+
+An actual run on the development machine:
+
+```
+  [  0.07s] search                 stable failure on case 5 of 64 (cached_decode), max |Δ| = 7.263e-02
+  [  0.01s] localize               earliest observed divergence at r0/block0/pos12/attn_out;
+                                   16/126 aligned checkpoints diverge (discrepancy reconverges
+                                   later; not monotone)
+  [  0.06s] reduce                 14 -> 2 valid tokens (7.0x) in 4 predicate queries;
+                                   one_minimal_wrt_declared_operations
+  [  0.61s] verify_reduced_case    reproduced in a fresh process
+  [  0.05s] export                 wrote a self-contained package to repro/
+  [  0.59s] verify_export          ran from a fresh temporary directory without importing EvalLens
+```
+
+Then run the exported reproduction — it needs Python, PyTorch, and NumPy, and nothing else:
+
+```bash
+cd artifacts/demo/repro
+python repro.py --expect-mismatch   # exits 0 only if the recorded mismatch reproduces
+python repro.py                     # exits 1 because the mismatch is present
+```
+
+A committed example lives in [`examples/reproductions/`](examples/reproductions/).
+
+Inspect the run in the offline viewer (loopback only, no backend):
+
+```bash
+.venv/bin/evallens view artifacts/demo
+```
+
+### Other commands
+
+```bash
+evallens compare --case artifacts/demo/failure.json --localize
+evallens reduce  --failure artifacts/demo/failure.json --out artifacts/reduced
+evallens export  --failure artifacts/reduced/failure.json --out artifacts/repro
+```
+
+`compare` exits 0 on PASS, 1 on a stable FAIL, and 2 for anything else — a crash, an invalid
+input, or an unstable result never gets counted as a detection.
 
 ## How it works
 
@@ -92,6 +143,18 @@ class of bug the oracle exists to catch.
 **Verdicts stay disjoint.** `PASS`, `FAIL`, `INVALID`, `ERROR`, `TIMEOUT`, `RESOURCE_LIMIT`,
 `UNSTABLE`. A crash is never counted as a detected regression. A classification that changes
 on replay is `UNSTABLE` and stays visible in the report.
+
+**Localization compares every aligned checkpoint — no binary search.** Bisection needs the
+"diverged" predicate to be monotone along the traversal, and measurably it is not: 10 of the
+16 injected fault variants have a checkpoint that returns inside tolerance after an earlier
+one left it. The result is called the *earliest observed divergence*, which is evidence about
+where a difference becomes visible at the exposed checkpoints — not proof of root cause.
+
+**Reduction is signature-preserving and blind.** A transformation is accepted only if the
+result is valid, strictly smaller in a lexicographic order, in the same declared category, and
+still stably fails at the same target request. The reducer reaches models only through the
+adapter protocol; it cannot see which fault it is reducing, and a test enforces that three
+different ways.
 
 ## What is and is not supported
 

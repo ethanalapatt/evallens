@@ -10,8 +10,8 @@ Actual state of the build. Status values are `not started`, `in progress`, `bloc
 | M3 — fault corpus and generators | **complete** |
 | M4 — checkpoint alignment and localization | **complete** |
 | M5 — input reduction and replay | **complete** |
-| M6 — portable reproduction and demo | **in progress** |
-| M7 — benchmark and generated report | not started |
+| M6 — portable reproduction and demo | **complete** |
+| M7 — benchmark and generated report | **in progress** |
 | M8 — reviewer polish and ownership | not started |
 
 **Measured results: none yet.** No benchmark has been run. `RESULTS.md` does not exist and
@@ -682,20 +682,160 @@ config must not be counted as a reproduction).
 
 ---
 
-## M6 — portable reproduction and actual demo — in progress
+## M6 — portable reproduction and actual demo — complete (2026-09-11)
+
+### What was built
+
+- `src/evallens/export.py` — self-contained reproduction packages. The fixture sources are
+  **copied** from the installed package with their imports rewritten, so the exported model is
+  the same code that found the mismatch. Plus `verify_reproduction`, which stages the package
+  in a fresh temporary directory outside the checkout and runs it in an isolated interpreter.
+- `src/evallens/demo.py` — the one-command pipeline: search, localize, reduce, fresh-process
+  replay, export, clean-room verify, and a viewer record.
+- `src/evallens/settings.py` — TOML configuration where an unknown key is an error.
+- `src/evallens/viewer.py` and `viewer/` — a loopback-only static server and an offline
+  inspector that renders only what a record actually contains.
+- CLI: `demo`, `compare`, `reduce`, `export`, `view` alongside `doctor`.
+
+### Commands actually run, and their output
+
+```
+$ .venv/bin/evallens demo --out artifacts/demo --config configs/cpu.toml
+EvalLens demo — demo-20260911-143413
+NOTE: this example uses a fault EvalLens injected on purpose. It is not a bug discovered in
+PyTorch or any other third-party library.
+
+  [  0.07s] search                 stable failure on case 5 of 64 (cached_decode), max |Δ| = 7.263e-02
+  [  0.01s] localize               earliest observed divergence at r0/block0/pos12/attn_out;
+                                   16/126 aligned checkpoints diverge (discrepancy reconverges
+                                   later; not monotone)
+  [  0.06s] reduce                 14 -> 2 valid tokens (7.0x) in 4 predicate queries;
+                                   one_minimal_wrt_declared_operations
+  [  0.61s] verify_reduced_case    reproduced in a fresh process (0.61s)
+  [  0.05s] export                 wrote a self-contained package to repro/
+  [  0.59s] verify_export          ran from a fresh temporary directory without importing EvalLens
+
+  original case     case_605dd27327c54e4e
+  reduced case      case_7287c8c752e22ccf  tokens=[21, 1]
+  earliest observed r0/block0/pos1/attn_out
+  max |Δ|           2.641718e-01
+
+$ cd artifacts/demo/repro && python repro.py --expect-mismatch
+verdict         FAIL
+max |Δ|         2.641718e-01  (recorded 2.641718e-01)
+replays         3 from clean state, stable=True
+exit=0
+
+$ cd artifacts/demo/repro && python repro.py     # default mode
+exit=1
+
+$ .venv/bin/python -m pytest -q
+501 passed in 39.62s
+
+$ .venv/bin/python -m ruff check . && .venv/bin/python -m ruff format --check .
+All checks passed! / 57 files already formatted
+
+$ .venv/bin/python -m mypy src/evallens bench
+Success: no issues found in 27 source files
+```
+
+A committed copy of that exact package lives at
+`examples/reproductions/cache-write-overwrite/` and was re-verified from its committed
+location.
+
+### Acceptance gate
+
+| Gate | Evidence |
+|---|---|
+| A discovered/reduced case reproduces from a fresh directory without importing EvalLens | `verify_reproduction` stages to a temp dir outside the checkout and runs `python -I`; `repro.py` additionally self-checks `sys.modules` and exits with a setup error if `evallens` leaked in |
+| Execution errors are distinguished from reproduced discrepancies | five distinct exit codes, each tested: tampered weights hash → 2, missing input → 2, mismatch in default mode → 1, `--expect-mismatch` success → 0, `--expect-mismatch` on a clean candidate → 4 |
+| An unrelated clean case remains clean | `test_a_clean_candidate_does_not_reproduce_and_is_reported_as_such`, and `evallens compare` on the un-faulted case exits 0 |
+| Actual artifacts preserved | `examples/reproductions/cache-write-overwrite/` (744 KB, weights included, verified in place) |
+
+### Evidence paths
+
+- `tests/integration/test_export_and_demo.py` — 27 tests
+- `tests/integration/test_cli_commands.py` — 31 tests
+- `examples/reproductions/cache-write-overwrite/` — a real package
+
+### Teach-back
+
+**What was built.** A directory you can hand to someone with no EvalLens installed, and one
+command that produces it from scratch.
+
+**Why this design.** The export *copies* the real fixture sources rather than shipping a
+hand-written "minimal" model. A separate minimal implementation is the obvious approach and it
+is a trap: two implementations drift, and a reproduction that runs a different model from the
+one that found the bug is worse than no reproduction. A test asserts the vendored transformer
+is line-for-line identical to the original apart from rewritten imports. The exit codes are
+the other load-bearing decision — an import error, a bad hash, and a reproduced mismatch must
+land on different numbers, or a broken package looks like a success in CI.
+
+**One tricky judgment call, not a failure.** The first working demo reduced a 4-token case to
+2 tokens — real, but it made a working reducer look trivial. The cause was that the
+boundary-aware generator deliberately concentrates on very short and very long sequences, so
+the first failure it hits is usually a tiny edge case. The fix was *not* to try seeds until
+the number looked good, which would be cherry-picking. It was to change the demo to use the
+uniform-valid generator, for the stated reason that a demo should show what reduction does to
+a *typical* failing input, and to keep taking the **first** stable failure rather than
+scanning for the largest. With that change the same fixed seed gives 14 → 2 tokens (7.0x).
+Which generator finds more bugs under budget is a benchmark question, answered in M7, not a
+demo question.
+
+Worth noting: the demo always detects at case 5. That is not luck — the generator's category
+schedule puts `cached_decode` at index 4, and the three stateless categories plus
+`cached_prefill_only` before it cannot reach a cache-indexing fault at all. A prefill-only
+case appends to the cache exactly once, so an overwrite-the-last-slot bug has nothing to
+overwrite.
+
+**How it was tested.** The dangerous failure mode for an export is a package that *looks*
+verified but is not, so the negative cases get the most attention: a tampered weights hash, a
+deleted input file, and a package whose candidate is swapped for a correct implementation all
+have explicit tests asserting the specific exit code. `repro.py` carries its own independence
+check, so the guarantee travels with the artifact rather than living only in the exporter.
+
+### UI verification — what was and was not checked
+
+**Checked:** the loopback server returns 200 for `index.html`, `viewer.css`, `viewer.js`, and
+`/run/record.json`; a path-traversal attempt (`/run/../../../../etc/passwd`) returns 404; the
+viewer has no external URLs, CDNs, or remote fonts; `viewer.js` contains no hardcoded
+measurement and has an explicit `not recorded` marker for missing fields; and every field the
+viewer reads is asserted present with the right type in a real demo record
+(`test_the_record_supplies_every_*_field_the_viewer_reads`). Non-loopback binds, a missing
+record, and a corrupt record are all tested to fail cleanly.
+
+**Not checked:** the rendered page was **not** visually confirmed in a browser. The
+browser-automation extension was not connected in this environment, so no screenshot or
+in-browser DOM assertion was taken. Layout, dark-mode rendering, and the file-picker path
+remain unverified by execution. This is an open item for M8.
+
+### Limitations at M6
+
+- No screenshot or recorded GIF of a completed demo exists yet; the media task is incomplete
+  and is not claimed otherwise.
+- The exported package carries the full fixture weights (744 KB). Fine for the unit fixture,
+  and it would need a different approach for the scale fixture.
+- `evallens compare` and `reduce` accept native-fixture bundles only. There is no adapter
+  plugin mechanism.
+- No benchmark harness or generated report yet — `RESULTS.md` still does not exist, correctly.
+
+---
+
+## M7 — complete benchmark and generated report — in progress
 
 ### Next exact action
 
-Implement `src/evallens/export.py`: write a self-contained directory containing `repro.py`, the
-minimal model and adapter source needed for the native fixture, the case and session data as
-JSON, deterministic weights as a non-object NPZ, the tolerance policy and hashes, an
-environment manifest, and a README with exact commands.
+Implement `bench/run.py`: a smoke preset and a full declared CPU preset that write raw JSONL
+trial records plus a frozen manifest (git commit and clean state, hardware and thread
+configuration, fixture/weights/config/tolerance hashes, seeds, the qualified mutant and control
+manifest, and generator/reducer versions). Run the smoke pilot first to estimate duration, then
+freeze the full matrix **before** inspecting any outcome.
 
-The reproduction must **not** import the installed EvalLens package and must not reference
-absolute paths into this checkout; verify it from a fresh temporary directory and subprocess
-with `PYTHONPATH` cleared. Provide `--expect-mismatch`, which exits zero only when the recorded
-mismatch reproduces, and a default mode returning a documented nonzero code for a mismatch that
-is distinct from a setup or execution error.
+Then `bench/report.py`, generating `RESULTS.md` from raw records only, rejecting missing
+required trials, duplicate trial IDs, inconsistent hashes, invalid denominators, and mismatched
+comparison cohorts — and producing an explicitly incomplete diagnostic report for an
+interrupted study rather than a publishable table.
 
-Then wire `evallens demo` as one command: generate the injected-fault example, detect it,
-reduce it, export it, validate the export, and write a viewer-compatible record.
+M7 acceptance gate: the measured declared cohort is complete; all verdicts are accounted for;
+clean controls have reported outcomes; reduction baselines are paired; and the report
+regenerates deterministically.

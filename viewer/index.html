@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>EvalLens — run inspector</title>
+<link rel="stylesheet" href="viewer.css">
+</head>
+<body>
+<header class="topbar">
+  <div class="brand">
+    <span class="mark">EvalLens</span>
+    <span class="sub">differential inference debugger</span>
+  </div>
+  <div class="loader">
+    <button id="reload" type="button">Reload record</button>
+    <label class="filepick">
+      Open a record.json
+      <input type="file" id="filepick" accept="application/json,.json">
+    </label>
+  </div>
+</header>
+
+<main id="app">
+  <section class="state" id="loading">
+    <h1>Loading run record…</h1>
+    <p class="muted">Reading <code>run/record.json</code>.</p>
+  </section>
+
+  <section class="state hidden" id="empty">
+    <h1>No run loaded</h1>
+    <p>This viewer displays a record produced by an actual run. It never shows sample data.</p>
+    <p class="muted">Produce one with:</p>
+    <pre><code>evallens demo --out artifacts/demo
+evallens view artifacts/demo</code></pre>
+    <p class="muted">Or choose a <code>record.json</code> with the file picker above.</p>
+  </section>
+
+  <section class="state hidden" id="error">
+    <h1>Could not load the record</h1>
+    <p id="error-detail" class="muted"></p>
+    <p>Nothing is displayed rather than showing partial or invented values.</p>
+  </section>
+
+  <div id="content" class="hidden"></div>
+</main>
+
+<footer class="footer">
+  <span>Offline viewer. Reads only the JSON a run actually wrote — no charts are drawn from
+  values the record does not contain.</span>
+</footer>
+
+<script src="viewer.js"></script>
+</body>
+</html>

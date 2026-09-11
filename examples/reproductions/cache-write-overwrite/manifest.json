@@ -1,0 +1,163 @@
+{
+  "candidate_adapter": {
+    "behavior": {
+      "attn_scale": "correct",
+      "batch": "correct",
+      "cache_index": "write_overwrite_last",
+      "causal": "correct",
+      "decode_pos": "correct",
+      "norm": "correct",
+      "pad_mask": "correct",
+      "perturb_scale": 0.0,
+      "reconverge_probe": 0.0,
+      "reset": "correct"
+    },
+    "config": {
+      "config_id": "tiny-2L-64d-4h-89a0eb72a852",
+      "d_ff": 256,
+      "d_head": 16,
+      "d_model": 64,
+      "init_seed": 20240917,
+      "max_position": 128,
+      "n_heads": 4,
+      "n_layers": 2,
+      "name": "tiny-2L-64d-4h",
+      "norm_eps": 1e-05,
+      "tie_embeddings": false,
+      "vocab_size": 97
+    },
+    "label": "demo-injected-cache-fault",
+    "role": "candidate"
+  },
+  "candidate_behavior": {
+    "attn_scale": "correct",
+    "batch": "correct",
+    "cache_index": "write_overwrite_last",
+    "causal": "correct",
+    "decode_pos": "correct",
+    "norm": "correct",
+    "pad_mask": "correct",
+    "perturb_scale": 0.0,
+    "reconverge_probe": 0.0,
+    "reset": "correct"
+  },
+  "case_content_hash": "7287c8c752e22ccf1e8e43c55fda65fea375fda02029868757144557c5c43953",
+  "created_at": "2026-09-11T21:34:14+00:00",
+  "environment": {
+    "chip": "Apple M3",
+    "cpu_count": 8,
+    "cuda_available": false,
+    "default_dtype": "torch.float32",
+    "git_branch": "main",
+    "git_commit": "2e9f800a2bf4e0927e2af684b6eabcd56e561793",
+    "git_dirty": true,
+    "machine": "arm64",
+    "manifest_id": "41e45fdf7bcece44",
+    "mps_available": true,
+    "mps_built": true,
+    "numpy_version": "2.5.3",
+    "os_release": "15.6",
+    "physical_memory_bytes": 17179869184,
+    "platform": "macOS-15.6-arm64-arm-64bit-Mach-O",
+    "python_executable": "/Users/ethanalapatt/vscode-pythonprojects/evallens/.venv/bin/python",
+    "python_version": "3.13.7",
+    "thermal_pressure": null,
+    "torch_num_interop_threads": 1,
+    "torch_num_threads": 4,
+    "torch_version": "2.14.0"
+  },
+  "evallens_version": "0.1.0",
+  "exit_codes": {
+    "execution_error": 3,
+    "mismatch": 1,
+    "not_reproduced": 4,
+    "ok": 0,
+    "setup_error": 2
+  },
+  "failure_signature": {
+    "checkpoint": null,
+    "execution_mode": "cached_decode",
+    "target_request_id": "r0",
+    "verdict": "fail"
+  },
+  "fault_description": "During incremental decoding the candidate writes each new key/value pair over the most recent cache slot instead of extending the cache, so one earlier position is permanently lost. Shapes stay valid and nothing raises; only the numbers change.",
+  "injected_fault": true,
+  "localization_summary": "earliest observed divergence at r0/block0/pos1/attn_out; 8/18 aligned checkpoints diverge (discrepancy reconverges later; not monotone)",
+  "model_config": {
+    "config_id": "tiny-2L-64d-4h-89a0eb72a852",
+    "d_ff": 256,
+    "d_head": 16,
+    "d_model": 64,
+    "init_seed": 20240917,
+    "max_position": 128,
+    "n_heads": 4,
+    "n_layers": 2,
+    "name": "tiny-2L-64d-4h",
+    "norm_eps": 1e-05,
+    "tie_embeddings": false,
+    "vocab_size": 97
+  },
+  "original_case_id": "case_605dd27327c54e4e",
+  "recorded": {
+    "detail": "1 request(s) violate the policy; worst r0: max|\u0394|=2.642e-01, relL2=4.891e-01, 97/194 entries",
+    "failing_request_ids": [
+      "r0"
+    ],
+    "max_abs_err": 0.2641717866063118,
+    "verdict": "fail"
+  },
+  "reduced_case_id": "case_7287c8c752e22ccf",
+  "reduction_summary": {
+    "logical_queries": 4,
+    "minimality": "one_minimal_wrt_declared_operations",
+    "original_requests": 1,
+    "original_tokens": 14,
+    "ratio": 7.0,
+    "reduced_requests": 1,
+    "reduced_tokens": 2
+  },
+  "reference_adapter": {
+    "behavior": {
+      "attn_scale": "correct",
+      "batch": "correct",
+      "cache_index": "correct",
+      "causal": "correct",
+      "decode_pos": "correct",
+      "norm": "correct",
+      "pad_mask": "correct",
+      "perturb_scale": 0.0,
+      "reconverge_probe": 0.0,
+      "reset": "correct"
+    },
+    "config": {
+      "config_id": "tiny-2L-64d-4h-89a0eb72a852",
+      "d_ff": 256,
+      "d_head": 16,
+      "d_model": 64,
+      "init_seed": 20240917,
+      "max_position": 128,
+      "n_heads": 4,
+      "n_layers": 2,
+      "name": "tiny-2L-64d-4h",
+      "norm_eps": 1e-05,
+      "tie_embeddings": false,
+      "vocab_size": 97
+    },
+    "label": "",
+    "role": "reference"
+  },
+  "schema_version": 1,
+  "source_clean": false,
+  "source_commit": "2e9f800a2bf4e0927e2af684b6eabcd56e561793",
+  "vendored_modules": [
+    "__init__.py",
+    "behavior.py",
+    "compare.py",
+    "config.py",
+    "encoding.py",
+    "native.py",
+    "tiny_transformer.py",
+    "types.py"
+  ],
+  "weights_sha256": "e954a43b36aaeb31595503cc0c0b1aec430e920feddac0d02388bd0dd23f8530"
+}
