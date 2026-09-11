@@ -20,6 +20,9 @@ budget". The fresh-subprocess replay used for final verification does enforce a 
 
 from __future__ import annotations
 
+import json
+import subprocess
+import sys
 import time
 from collections import Counter
 from dataclasses import dataclass, field
@@ -232,6 +235,122 @@ def stable_comparison(
     return StabilityResult(Verdict.UNSTABLE, False, tuple(observations), replays)
 
 
+@dataclass(slots=True)
+class SubprocessReplayResult:
+    """Outcome of re-running a case in a fresh interpreter.
+
+    ``harness_ok`` is deliberately separate from ``verdict``. A crashed harness, a failed
+    import, or a killed process is not a reproduced mismatch, and conflating the two is the
+    single easiest way to publish a reproduction that never actually reproduced anything.
+    """
+
+    harness_ok: bool
+    verdict: Verdict | None
+    stable: bool
+    detail: str
+    payload: dict[str, Any]
+    returncode: int
+    elapsed_s: float
+
+    @property
+    def reproduced_failure(self) -> bool:
+        return self.harness_ok and self.stable and self.verdict is Verdict.FAIL
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "harness_ok": self.harness_ok,
+            "verdict": self.verdict.value if self.verdict else None,
+            "stable": self.stable,
+            "reproduced_failure": self.reproduced_failure,
+            "detail": self.detail,
+            "returncode": self.returncode,
+            "elapsed_s": round(self.elapsed_s, 4),
+        }
+
+
+def replay_in_subprocess(
+    case: Case,
+    reference_spec: Any,
+    candidate_spec: Any,
+    policy: TolerancePolicy,
+    *,
+    replays: int = DEFAULT_STABILITY_REPLAYS,
+    timeout_s: float = 180.0,
+    threads: int = 4,
+) -> SubprocessReplayResult:
+    """Re-run ``case`` in a fresh interpreter with a hard timeout.
+
+    Unlike the in-process path, this one can actually be killed at its budget, and it starts
+    with no residue from the run that discovered the case.
+    """
+    request = {
+        "case": case.to_dict(),
+        "policy": policy.to_dict(),
+        "reference": reference_spec.to_dict(),
+        "candidate": candidate_spec.to_dict(),
+        "replays": replays,
+        "timeout_s": timeout_s,
+        "threads": threads,
+    }
+    started = time.perf_counter_ns()
+    try:
+        completed = subprocess.run(
+            [sys.executable, "-m", "evallens._subprocess_replay"],
+            input=json.dumps(request),
+            capture_output=True,
+            text=True,
+            timeout=timeout_s,
+            check=False,
+        )
+    except subprocess.TimeoutExpired:
+        return SubprocessReplayResult(
+            harness_ok=False,
+            verdict=Verdict.TIMEOUT,
+            stable=False,
+            detail=f"subprocess killed after {timeout_s:.1f}s",
+            payload={},
+            returncode=-1,
+            elapsed_s=(time.perf_counter_ns() - started) / 1e9,
+        )
+    elapsed = (time.perf_counter_ns() - started) / 1e9
+
+    try:
+        payload = json.loads(completed.stdout)
+    except json.JSONDecodeError:
+        return SubprocessReplayResult(
+            harness_ok=False,
+            verdict=None,
+            stable=False,
+            detail=f"unparseable subprocess output (rc={completed.returncode}): "
+            f"{completed.stderr[:400]}",
+            payload={},
+            returncode=completed.returncode,
+            elapsed_s=elapsed,
+        )
+
+    if not payload.get("ok"):
+        return SubprocessReplayResult(
+            harness_ok=False,
+            verdict=None,
+            stable=False,
+            detail=str(payload.get("error", "subprocess reported failure")),
+            payload=payload,
+            returncode=completed.returncode,
+            elapsed_s=elapsed,
+        )
+
+    stability = payload["stability"]
+    return SubprocessReplayResult(
+        harness_ok=True,
+        verdict=Verdict(stability["verdict"]),
+        stable=bool(stability["stable"]),
+        detail=(stability.get("representative") or {}).get("detail", ""),
+        payload=payload,
+        returncode=completed.returncode,
+        elapsed_s=elapsed,
+    )
+
+
 __all__ = [
     "DEFAULT_CASE_TIMEOUT_S",
     "DEFAULT_STABILITY_REPLAYS",
@@ -239,6 +358,8 @@ __all__ = [
     "ResettableAdapter",
     "RunCounters",
     "StabilityResult",
+    "SubprocessReplayResult",
+    "replay_in_subprocess",
     "run_comparison",
     "stable_comparison",
 ]

@@ -154,4 +154,31 @@ def capture_environment() -> EnvironmentManifest:
     )
 
 
-__all__ = ["EnvironmentManifest", "GitState", "capture_environment"]
+def numeric_identity() -> str:
+    """Identity of everything that can change a floating-point result on this machine.
+
+    This is the environment component of the predicate cache key. It deliberately excludes
+    volatile bookkeeping such as the git commit, working-tree cleanliness, and thermal state:
+    a cached verdict stays valid across an edit to a README, but must be invalidated by a
+    torch upgrade or a change in thread count. Getting this wrong in the *other* direction is
+    the dangerous one — a stale cached verdict would silently corrupt a whole reduction.
+    """
+    manifest = capture_environment()
+    payload = json.dumps(
+        {
+            "python": manifest.python_version,
+            "torch": manifest.torch_version,
+            "numpy": manifest.numpy_version,
+            "platform": manifest.platform,
+            "machine": manifest.machine,
+            "threads": manifest.torch_num_threads,
+            "interop_threads": manifest.torch_num_interop_threads,
+            "dtype": manifest.default_dtype,
+        },
+        sort_keys=True,
+        separators=(",", ":"),
+    )
+    return hashlib.sha256(payload.encode()).hexdigest()[:16]
+
+
+__all__ = ["EnvironmentManifest", "GitState", "capture_environment", "numeric_identity"]

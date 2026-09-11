@@ -18,8 +18,8 @@ from pathlib import Path
 
 import pytest
 
-SEARCH_POLICY_MODULES = ["evallens.generate"]
-"""Modules that drive the search. `evallens.reduce` joins this list at M5."""
+SEARCH_POLICY_MODULES = ["evallens.generate", "evallens.reduce"]
+"""Every module that drives the search and must not be able to see the answer key."""
 
 FORBIDDEN_IMPORT_ROOTS = {"bench"}
 FORBIDDEN_NAMES = {"Behavior", "MutantSpec", "MUTANTS", "CONTROLS", "qualify_mutant"}
@@ -74,10 +74,11 @@ def test_source_never_mentions_a_mutant_identity(module: str) -> None:
         )
 
 
-def test_importing_the_generator_does_not_load_the_fault_corpus() -> None:
+@pytest.mark.parametrize("module", SEARCH_POLICY_MODULES)
+def test_importing_a_search_module_does_not_load_the_fault_corpus(module: str) -> None:
     """Dynamic check: a transitive import would still put `bench` into sys.modules."""
     script = (
-        "import sys; import evallens.generate; "
+        f"import sys; import {module}; "
         "leaked = sorted(m for m in sys.modules if m.split('.')[0] == 'bench'); "
         "print(leaked)"
     )
@@ -85,7 +86,27 @@ def test_importing_the_generator_does_not_load_the_fault_corpus() -> None:
         [sys.executable, "-c", script], capture_output=True, text=True, timeout=180, check=False
     )
     assert result.returncode == 0, result.stderr
-    assert result.stdout.strip() == "[]", f"generator loaded fault-corpus modules: {result.stdout}"
+    assert result.stdout.strip() == "[]", f"{module} loaded fault-corpus modules: {result.stdout}"
+
+
+def test_the_reducer_reaches_models_only_through_the_adapter_protocol() -> None:
+    """It must not need a ModelConfig, weights, or anything else that implies fixture access."""
+    import inspect
+
+    from evallens.reduce import FailurePredicate
+
+    parameters = set(inspect.signature(FailurePredicate.__init__).parameters)
+    assert parameters == {
+        "self",
+        "reference",
+        "candidate",
+        "policy",
+        "signature",
+        "budget",
+        "counters",
+        "environment_id",
+    }
+    assert not parameters & {"config", "weights", "behavior", "mutant", "model"}
 
 
 def test_the_generator_api_never_receives_a_behavior() -> None:

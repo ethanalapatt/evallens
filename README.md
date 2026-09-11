@@ -31,7 +31,7 @@ forward pass at `max|Δ| = 2.4e-07`, and identical stateless implementations agr
 against its own handwritten trigger. Those are qualification checks, not detection rates —
 whether a *generator* finds them under budget is a separate question, measured in M7.
 
-M4 (checkpoint alignment and localization) is in progress. `PROGRESS.md` tracks each milestone
+M4 (localization) and M5 (reduction) are complete too: all 16 variants localize to a semantic checkpoint, and reduction shrinks failing cases by 20–31x while preserving the failure signature. M6 (portable reproduction and the demo) is in progress. `PROGRESS.md` tracks each milestone
 with the actual commands and their output.
 
 ## Install and check
@@ -58,7 +58,7 @@ machine (Apple M3, macOS 15.6, Python 3.13.7, PyTorch 2.14.0, NumPy 2.5.3) it re
 .venv/bin/python -m mypy src/evallens
 ```
 
-326 tests pass at M3.
+443 tests pass at M5.
 
 ## How it works
 

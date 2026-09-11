@@ -9,8 +9,8 @@ Actual state of the build. Status values are `not started`, `in progress`, `bloc
 | M2 — adapters and numerical comparator | **complete** |
 | M3 — fault corpus and generators | **complete** |
 | M4 — checkpoint alignment and localization | **complete** |
-| M5 — input reduction and replay | **in progress** |
-| M6 — portable reproduction and demo | not started |
+| M5 — input reduction and replay | **complete** |
+| M6 — portable reproduction and demo | **in progress** |
 | M7 — benchmark and generated report | not started |
 | M8 — reviewer polish and ownership | not started |
 
@@ -545,20 +545,157 @@ break any implementation that had quietly come to rely on ordering.
 
 ---
 
-## M5 — input reduction and replay — in progress
+## M5 — input reduction and replay — complete (2026-09-11)
+
+### What was built
+
+- `src/evallens/reduce.py` — structure-aware `ddmin` and a separately implemented greedy
+  single-deletion baseline, over four declared operations (remove session requests retaining
+  the target, remove token chunks, remove padding, simplify token values), with strict
+  lexicographic size decrease, category preservation, a predicate cache, separate counters,
+  and configurable query and time budgets.
+- `FailurePredicate` — signature-preserving, cached, and blind. It takes an `Adapter`, a
+  `TolerancePolicy`, and a `FailureSignature`, and reaches validation through
+  `adapter.validate`, so it does not even need the model config.
+- `certify_minimality` — checks every remaining eligible single deletion before any
+  1-minimality claim is made.
+- `src/evallens/_subprocess_replay.py` and `replay.replay_in_subprocess` — fresh-interpreter
+  re-runs with a real hard timeout and zero residue.
+- `adapters.native.NativeAdapterSpec` — serializable adapter descriptions, so a case can be
+  rebuilt and replayed in another process without shipping weights.
+
+### Commands actually run, and their output
+
+```
+$ .venv/bin/python -m pytest -q
+443 passed in 28.00s
+
+$ .venv/bin/python -m ruff check .
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check .
+51 files already formatted
+
+$ .venv/bin/python -m mypy src/evallens bench
+Success: no issues found in 23 source files
+```
+
+### Measured paired reducer comparison
+
+Three failing starting cases, one per execution mode, each fed to both reducers from the
+**identical** starting case under **identical** budgets (256 queries, 60 s).
+
+| scenario | strategy | tokens | ratio | logical queries | model runs | cache hits | minimality |
+|---|---|---|---|---|---|---|---|
+| cached | ddmin | 40 → 2 | 20.0x | 5 | 30 | 0 | 1-minimal |
+| cached | greedy | 40 → 2 | 20.0x | 39 | 234 | 0 | 1-minimal |
+| session | ddmin | 63 → 2 | 31.5x | 11 | 66 | 0 | 1-minimal |
+| session | greedy | 63 → 2 | 31.5x | 46 | 276 | 0 | 1-minimal |
+| padded | ddmin | 50 → 2 | 25.0x | 12 | 72 | 0 | 1-minimal |
+| padded | greedy | 50 → 2 | 25.0x | 48 | 288 | 0 | 1-minimal |
+
+**This is a three-case pilot, not the benchmark.** The frozen reduction cohort, selected
+before either reducer runs, is M7's job; these numbers exist to show the machinery works and
+to size the workload.
+
+Read honestly, the interesting result is that **ddmin does not produce smaller cases than the
+greedy baseline here — it reaches the same size for 4–8× fewer predicate queries.** On a
+corpus this small and this reducible, both methods bottom out at the same place. If that
+holds in the frozen cohort, the finding to publish is "equal quality, substantially cheaper",
+not "better reduction".
+
+Cache hits are zero in all six runs, which is expected rather than a broken cache: each
+accepted reduction moves to a new case, so within a single reduction the search rarely revisits
+an identical case. The cache is unit-tested directly (`test_repeating_a_query_hits_the_cache_
+and_runs_no_model`) and its key is tested to cover policy, both adapters, signature, and the
+numeric environment. It will matter more in M7, where a frozen cohort is reduced repeatedly.
+
+The session case reduces to **two** requests, not one. That is correct: a between-request
+reset fault needs a preceding request to leave residue, so removing it would destroy the
+failure. The reducer discovered that from the predicate alone.
+
+### Acceptance gate
+
+| Gate | Evidence |
+|---|---|
+| Reductions stay valid and failing | 6 parametrized tests (3 modes x 2 strategies), plus all 16 corpus variants reduced end to end, plus 2 Hypothesis properties |
+| Session-state cases work | `test_the_target_request_survives_session_reduction` — the target id is stable and the reduction stops at 2 requests |
+| Timeout preserves the best valid result | `test_a_tiny_query_budget_...` and `test_a_tiny_time_budget_...` — both verify the returned case is valid and still stably fails |
+| No invalid case is accepted as a reduction | `test_an_invalid_candidate_is_never_accepted` plus the transform property test |
+| Property tests show determinism and termination | `test_reduction_is_deterministic_for_a_given_start`, `test_reduction_always_terminates_inside_its_budget`, `test_accepted_steps_form_a_strictly_decreasing_chain` |
+| The reducer never reads a fault label | `evallens.reduce` added to `SEARCH_POLICY_MODULES`: AST import scan, source identity scan, clean-subprocess import check, and a check that `FailurePredicate.__init__` takes no config, weights, or behavior |
+
+### Evidence paths
+
+- `tests/integration/test_reduction.py` — 71 tests
+- `tests/property/test_reduction_properties.py` — 6 Hypothesis properties
+- `tests/unit/test_search_policy_blindness.py` — now covers the reducer too
+
+### Teach-back
+
+**What was built.** A search that turns a 63-token three-request session failure into a
+two-token two-request failure, refuses anything invalid, smaller-but-different, or
+intermittent, and says exactly how strong a minimality claim it can support.
+
+**Why this design.** Acceptance checks run cheapest-first: strict size decrease, then
+category, then the predicate. The first two are free; the predicate costs three stability
+replays, each running both adapters, so about six model runs. Rejecting structurally before
+ever touching the model is most of why five logical queries suffice to reduce 40 tokens to 2.
+Category preservation is the rule that is easiest to omit and most important to keep — a
+two-row batch shrunk to one row would be a smaller case that still fails, but it would no
+longer be testing batching, and calling it a reduction of the original failure would be a
+quiet lie. The greedy baseline is implemented separately rather than sharing ddmin's
+machinery, because a baseline that inherits the method's advantages measures nothing.
+
+**One tricky failure.** A property test caught a design flaw in the token-value operation.
+Canonicalizing a single token *slot* can make a case **larger**: rewriting one token of
+`[2, 2, 2]` gives `[1, 2, 2]`, which has two distinct values where the original had one, and
+`token_value_complexity` ranks by distinct count first. The strict-decrease rule was doing its
+job and rejecting those, so nothing was ever *wrong* — but the search was spending most of its
+token-value budget proposing changes that could not possibly be accepted. The fix was to group
+the operation by token *value* instead of by slot: rewriting every occurrence of one value can
+never increase the distinct count and always decreases the value sum, so the operation is
+monotone by construction. The general lesson is that a reduction operation should move down the
+size order structurally, not merely be filtered by a guard afterwards.
+
+**How it was tested.** The 1-minimality claim is not trusted — a test re-derives it
+independently, replaying every remaining single deletion against the final case and asserting
+none survives. Budget exhaustion is tested from both directions (query cap and time cap) and
+both assert the returned case is still valid and still stably failing, because the dangerous
+failure mode is a timeout returning something that does not fail. The subprocess path has a
+negative control (a clean case must not reproduce) and a harness-error control (an unloadable
+config must not be counted as a reproduction).
+
+### Limitations at M5
+
+- The paired comparison above is a three-case pilot. The frozen reduction cohort, chosen
+  before either reducer runs, is M7.
+- 1-minimality is *with respect to the declared deletion operations only*. An operation not in
+  the set — splitting a request, reordering tokens, changing the prefill boundary directly —
+  might reduce further. This is never a globally-smallest claim.
+- A matching failure signature does not prove identical root cause. It establishes that the
+  same failure class is still observed at the same target request, under the same category.
+- Checkpoint-preserving reduction (`signature.checkpoint` set) runs an extra traced pass per
+  query and is counted separately in `localization_queries`. It is implemented and exercised
+  but is not on the default path.
+- No export or benchmark harness yet.
+
+---
+
+## M6 — portable reproduction and actual demo — in progress
 
 ### Next exact action
 
-Implement `src/evallens/reduce.py`: structure-aware `ddmin` plus a separately implemented
-greedy single-deletion baseline, over the declared operations (remove earlier session
-requests retaining the target; remove token chunks; reduce padding; simplify token values
-toward `CANONICAL_TOKEN_ID`), with strict lexicographic size decrease, a predicate cache keyed
-by case hash plus adapter/weights/policy/environment identity, separate counting of logical
-queries, actual model runs and cache hits, and the 256-query / 60-second budgets.
+Implement `src/evallens/export.py`: write a self-contained directory containing `repro.py`, the
+minimal model and adapter source needed for the native fixture, the case and session data as
+JSON, deterministic weights as a non-object NPZ, the tolerance policy and hashes, an
+environment manifest, and a README with exact commands.
 
-Add `evallens.reduce` to `SEARCH_POLICY_MODULES` in `tests/unit/test_search_policy_blindness.py`
-so the reducer is held to the same blindness standard as the generator.
+The reproduction must **not** import the installed EvalLens package and must not reference
+absolute paths into this checkout; verify it from a fresh temporary directory and subprocess
+with `PYTHONPATH` cleared. Provide `--expect-mismatch`, which exits zero only when the recorded
+mismatch reproduces, and a default mode returning a documented nonzero code for a mismatch that
+is distinct from a setup or execution error.
 
-M5 acceptance gate: reductions stay valid and failing; session-state cases work; timeout
-preserves the best valid result; no invalid case is accepted; property tests show determinism
-and termination; and the reducer provably never reads a fault label.
+Then wire `evallens demo` as one command: generate the injected-fault example, detect it,
+reduce it, export it, validate the export, and write a viewer-compatible record.

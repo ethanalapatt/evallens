@@ -24,7 +24,8 @@ and serialized; state must never leak between separate cases.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass
+from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import Any
 
 import numpy as np
@@ -37,7 +38,7 @@ from evallens.adapters.encoding import (
     validate_case,
 )
 from evallens.fixtures.behavior import Behavior
-from evallens.fixtures.config import ModelConfig, WeightDict, weights_sha256
+from evallens.fixtures.config import ModelConfig, WeightDict, make_weights, weights_sha256
 from evallens.fixtures.tiny_transformer import KVCache, TinyTransformer, build_model
 from evallens.types import (
     AdapterExecutionError,
@@ -374,6 +375,47 @@ class CandidateAdapter(_NativeAdapterBase):
         return self._result(case, outputs, sink, started)
 
 
+@dataclass(frozen=True, slots=True)
+class NativeAdapterSpec:
+    """A serializable description of a native adapter.
+
+    Enough to rebuild the adapter in a different process without shipping weights: the
+    canonical weight dictionary is a pure function of the config (including its ``init_seed``),
+    so ``make_weights(config)`` reproduces it exactly, and the rebuilt adapter verifies that
+    by hash before running anything.
+    """
+
+    role: str  # "reference" or "candidate"
+    config: ModelConfig
+    behavior: Behavior = field(default_factory=Behavior)
+    label: str = ""
+
+    def build(self) -> ReferenceAdapter | CandidateAdapter:
+        weights = make_weights(self.config)
+        if self.role == "reference":
+            return ReferenceAdapter(self.config, weights, label=self.label)
+        if self.role == "candidate":
+            return CandidateAdapter(self.config, weights, self.behavior, label=self.label)
+        raise ValueError(f"unknown adapter role {self.role!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "role": self.role,
+            "config": self.config.to_dict(),
+            "behavior": self.behavior.to_dict(),
+            "label": self.label,
+        }
+
+    @staticmethod
+    def from_dict(payload: Mapping[str, Any]) -> NativeAdapterSpec:
+        return NativeAdapterSpec(
+            role=str(payload["role"]),
+            config=ModelConfig.from_dict(dict(payload["config"])),
+            behavior=Behavior.from_dict(dict(payload.get("behavior", {}))),
+            label=str(payload.get("label", "")),
+        )
+
+
 def build_adapter_pair(
     config: ModelConfig,
     weights: WeightDict,
@@ -394,6 +436,7 @@ __all__ = [
     "CandidateAdapter",
     "CaptureBudget",
     "InvalidCaseError",
+    "NativeAdapterSpec",
     "ReferenceAdapter",
     "build_adapter_pair",
 ]
