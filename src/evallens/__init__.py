@@ -5,6 +5,14 @@ earliest *observed* divergence at semantically aligned checkpoints, minimizes a 
 while preserving its failure signature, and exports a standalone reproduction.
 """
 
+from evallens.compare import compare, compare_arrays
+from evallens.replay import (
+    ReplayBudget,
+    RunCounters,
+    StabilityResult,
+    run_comparison,
+    stable_comparison,
+)
 from evallens.types import (
     Adapter,
     Case,
@@ -28,8 +36,15 @@ __all__ = [
     "ExecutionMode",
     "ExecutionResult",
     "FailureSignature",
+    "ReplayBudget",
     "Request",
+    "RunCounters",
+    "StabilityResult",
     "TolerancePolicy",
     "Verdict",
     "__version__",
+    "compare",
+    "compare_arrays",
+    "run_comparison",
+    "stable_comparison",
 ]

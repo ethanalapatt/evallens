@@ -20,10 +20,12 @@ its own.
 
 ## Status
 
-M1 is complete: the repository, environment, tiny reference fixture, independent FP64 oracle,
-case schema, and `evallens doctor` all work and are tested on the target machine. M2
-(adapters and the numerical comparator) is in progress. `PROGRESS.md` tracks each milestone
-with the actual commands and their actual output.
+M1 and M2 are complete: the reference fixture and its independent FP64 oracle, the case
+schema, the reference and candidate adapters, the numerical comparator, and stability replay
+all work and are tested on the target machine. Every known-good control passes — incremental
+cached decode matches a full-prefix forward pass at `max|Δ| = 2.4e-07`, and identical
+stateless implementations agree bitwise. M3 (the fault corpus and input generators) is in
+progress. `PROGRESS.md` tracks each milestone with the actual commands and their output.
 
 ## Install and check
 
@@ -49,7 +51,7 @@ machine (Apple M3, macOS 15.6, Python 3.13.7, PyTorch 2.14.0, NumPy 2.5.3) it re
 .venv/bin/python -m mypy src/evallens
 ```
 
-122 tests pass at M1.
+199 tests pass at M2.
 
 ## How it works
 

@@ -55,8 +55,21 @@ class KVCache:
 
     @property
     def length(self) -> int:
-        first = self.keys[0]
-        return 0 if first is None else int(first.shape[2])
+        """Cached length of layer 0. Only meaningful between forward passes."""
+        return self.length_of(0)
+
+    def length_of(self, layer: int) -> int:
+        """Cached length of one layer, read *before* that layer appends this step.
+
+        Per-layer rather than global on purpose. A single forward pass walks the layers in
+        order, so by the time layer 1 runs, layer 0 has already appended this step's keys.
+        Asking a shared counter for "the" cache length there yields ``L + T`` instead of
+        ``L``, which shifts every query's absolute position by one step and makes the cached
+        path disagree with full-prefix execution for reasons that have nothing to do with
+        any injected fault.
+        """
+        cached = self.keys[layer]
+        return 0 if cached is None else int(cached.shape[2])
 
     def clear(self) -> None:
         self.keys = [None] * self.n_layers
@@ -84,9 +97,11 @@ class KVCache:
             full_v = torch.cat([past_v, value], dim=2)
         self.keys[layer] = full_k
         self.values[layer] = full_v
-        if mode == "read_drop_oldest" and full_k.shape[2] > 1:
+        if mode == "read_drop_oldest" and past_k is not None and full_k.shape[2] > 1:
             # Injected fault: the read view drops the oldest cached position, so the query
             # silently attends to a truncated history while the cache itself stays intact.
+            # Restricted to steps that have a past, so prefill keeps its shape contract and
+            # the fault stays silent rather than becoming a crash.
             return full_k[:, :, 1:], full_v[:, :, 1:]
         return full_k, full_v
 
@@ -178,7 +193,7 @@ class Attention(nn.Module):
 
         past_len = 0
         if cache is not None:
-            past_len = cache.length
+            past_len = cache.length_of(self.layer_index)
             key, value = cache.append(self.layer_index, key, value, self.behavior.cache_index)
 
         if self.behavior.batch == "v_roll" and batch > 1:

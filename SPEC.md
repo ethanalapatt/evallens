@@ -3,8 +3,8 @@
 Resolved from the project brief. This is the contract the implementation is held to; where
 the brief left a choice open, the decision and its reason are recorded here.
 
-**Status:** M1 complete. Sections describing later milestones state the intended design and
-are marked accordingly. Nothing in this document is a claim that unmeasured behavior has
+**Status:** M1 and M2 complete. Sections describing later milestones state the intended
+design and are marked accordingly. Nothing in this document is a claim that unmeasured behavior has
 been measured.
 
 ---
@@ -98,8 +98,17 @@ still addresses the same request afterwards.
 ### Case
 
 ```python
-Case(schema_version, case_id, model_config_id, weights_sha256, requests,
-     execution_mode, input_seed, category, provenance)
+Case(
+    schema_version,
+    case_id,
+    model_config_id,
+    weights_sha256,
+    requests,
+    execution_mode,
+    input_seed,
+    category,
+    provenance,
+)
 ```
 
 `case_id` is derived from the case's own canonical content hash. `provenance` is excluded
