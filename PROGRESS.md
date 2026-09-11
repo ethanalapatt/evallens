@@ -8,8 +8,8 @@ Actual state of the build. Status values are `not started`, `in progress`, `bloc
 | M1 — repository, environment, reference fixture | **complete** |
 | M2 — adapters and numerical comparator | **complete** |
 | M3 — fault corpus and generators | **complete** |
-| M4 — checkpoint alignment and localization | **in progress** |
-| M5 — input reduction and replay | not started |
+| M4 — checkpoint alignment and localization | **complete** |
+| M5 — input reduction and replay | **in progress** |
 | M6 — portable reproduction and demo | not started |
 | M7 — benchmark and generated report | not started |
 | M8 — reviewer polish and ownership | not started |
@@ -398,19 +398,167 @@ tolerance, so it can never decay into a no-op that passes for the wrong reason.
 
 ---
 
-## M4 — checkpoint alignment and localization — in progress
+## M4 — checkpoint alignment and localization — complete (2026-09-11)
+
+### What was built
+
+- `src/evallens/trace.py` — semantic alignment by `(request_id, layer_name, token_position,
+  kind)`, a declared traversal order, exhaustive comparison of every aligned checkpoint, and
+  `LocalizationResult` with its interpretation caveat attached to the serialized payload.
+- `trace_and_localize` — a **separate** traced pass, run only after a stable failure exists.
+- `Behavior.reconverge_probe` — a crafted diagnostic (explicitly *not* a fault) that makes an
+  intermediate diverge and then genuinely reconverge before the output.
+- `Behavior.is_injected_fault` — distinguishes genuine faults from benign controls and
+  diagnostic probes, so a probe can never be counted as a detection.
+
+### Commands actually run, and their output
+
+```
+$ .venv/bin/python -m pytest -q
+362 passed in 4.54s
+
+$ .venv/bin/python -m ruff check .
+All checks passed!
+
+$ .venv/bin/python -m mypy src/evallens bench
+Success: no issues found in 21 source files
+```
+
+### Measured localization on every qualified variant
+
+Each variant against its own handwritten trigger, under the frozen policy. "Earliest
+observed" is where divergence first becomes *visible at the exposed checkpoints* — it is not
+a root-cause claim.
+
+| Variant | earliest observed | divergent/aligned | reconverges |
+|---|---|---|---|
+| `causal_mask.off_by_one` | `t0/block0/pos0/attn_out` | 37/45 | yes |
+| `causal_mask.leak_last` | `t0/block0/pos0/attn_out` | 45/54 | yes |
+| `padding_mask.ignore` | `t0/block0/pos0/attn_out` | 24/27 | no |
+| `padding_mask.right_only` | `t0/block0/pos0/attn_out` | 16/63 | yes |
+| `decode_position.minus_one` | `t0/embed/pos1/embedding` | 36/45 | yes |
+| `decode_position.restart` | `t0/embed/pos3/embedding` | 27/54 | yes |
+| `cache_indexing.write_overwrite_last` | `t0/block0/pos2/attn_out` | 24/45 | yes |
+| `cache_indexing.read_drop_oldest` | `t0/block0/pos2/attn_out` | 32/54 | yes |
+| `request_reset.none` | `t1/block0/pos0/attn_out` | 24/63 | no |
+| `request_reset.partial` | `t1/block1/pos0/attn_out` | 20/81 | no |
+| `normalization.large_eps` | `t0/block0/pos0/attn_out` | 32/36 | no |
+| `normalization.wrong_axis` | `t0/block0/pos0/attn_out` | 40/45 | no |
+| `attention_scaling.no_sqrt` | `t0/block0/pos1/attn_out` | 40/54 | yes |
+| `attention_scaling.d_model` | `t0/block0/pos1/attn_out` | 40/54 | yes |
+| `batch_indexing.row_leak_first` | `t1/block0/pos0/attn_out` | 24/54 | no |
+| `batch_indexing.v_roll` | `t0/block0/pos0/attn_out` | 96/108 | yes |
+
+Localization coverage on this set is 16/16, and alignment is complete (no unmatched
+checkpoints on either side) for every variant.
+
+Five rows are worth reading closely, because each is a place the result could have been
+plausible-but-wrong and instead is specifically right:
+
+- **Both decode-position variants localize to `embed/embedding`, not to attention.** A wrong
+  decode position changes which *position embedding* is added, so the divergence is visible
+  before attention ever runs. Their positions — `pos1` for a prefill of 1, `pos3` for a
+  prefill of 3 — are exactly the first decode step in each trigger.
+- **Both cache-indexing variants localize to `pos2`**, the first decode step after their
+  prefill of two. Prefill itself is untouched, which is what keeps them silent.
+- **`request_reset.partial` localizes to `block1`, not `block0`.** It clears layer 0's cache
+  and not layer 1's, so layer 0 genuinely is correct and the earliest divergence is a layer
+  deeper. `request_reset.none` localizes to `block0` of the *second* request `t1`, since a
+  between-request reset cannot affect the first request.
+- **Both attention-scaling variants localize to `pos1`, not `pos0`.** At position 0 a causal
+  softmax has exactly one candidate key, so it is 1.0 whatever the scale — the fault is
+  genuinely unobservable there. This is the sharpest evidence that the result reports where
+  divergence is *observable* rather than where the fault was injected.
+- **`batch_indexing.row_leak_first` localizes to row `t1`.** Row 0's values are the ones
+  being broadcast, so row 0 keeps its own correct result.
+
+### Non-monotonicity: 10 of 16 variants reconverge
+
+Ten of the sixteen qualified variants have at least one aligned checkpoint that returns
+inside tolerance after an earlier one left it. Binary search for "the first mismatch" assumes
+that predicate is monotone. It is not, in the majority of this corpus, so localization
+compares every aligned checkpoint in order. That costs one linear pass over a bounded
+capture.
+
+The crafted case required by the gate is `Behavior.reconverge_probe`: the residual stream
+genuinely carries `hidden + probe` while the embedding checkpoint is recorded and genuinely
+has it subtracted before anything consumes it. Result: all five embedding checkpoints diverge,
+every later checkpoint agrees, and the **output verdict is PASS**. A first-divergence search
+assuming monotonicity would mis-handle exactly this shape.
+
+### Acceptance gate
+
+| Gate | Evidence |
+|---|---|
+| Known injected examples localize to the expected exposed checkpoint | 16 parametrized localization tests plus the five targeted tests above |
+| Unavailable alignment is reported accurately | 4 tests: no traced pass, nothing aligns, values dropped under budget, and identical implementations with no divergence |
+| Capture does not leak across runs | `test_the_traced_pass_does_not_leak_between_runs` |
+| Capture does not silently enter one timing baseline | `test_the_traced_pass_is_separate_from_the_detection_path` — capture is off in the detection path and provably does not change outputs |
+
+### Evidence paths
+
+- `tests/integration/test_localization.py` — 36 tests
+- `src/evallens/trace.py` — the traversal order and its justification
+
+### Teach-back
+
+**What was built.** A way to ask "where does this difference first become visible?" that
+answers with a semantic address rather than a hook index, and that says "unavailable" instead
+of guessing when it cannot tell.
+
+**Why this design.** Two decisions. First, alignment is by `(request, layer, position, kind)`,
+never by call order — a full-prefix reference records a whole sequence in one call while a
+cached candidate records one decode step at a time, so the *n*-th recorded tensor on one side
+has no relationship to the *n*-th on the other. Second, every aligned checkpoint is compared
+rather than bisected. Bisection is the obvious optimization and it is wrong here: it needs a
+monotone predicate, and ten of sixteen variants in this project's own corpus visibly violate
+that.
+
+**One tricky failure.** Not a failure so much as a result that looked wrong and was not. Both
+attention-scaling variants localized to token position 1, while every other attention fault
+localized to position 0. The first instinct was an off-by-one in the traversal. It is not: at
+position 0 a causal softmax has exactly one admissible key, so it normalizes to 1.0 no matter
+what the scores were scaled by. The fault is genuinely invisible there. Once that clicked it
+became the single best test in the milestone — a localizer that reported position 0 would be
+reporting where the fault *lives* rather than where it is *observable*, and those are
+different claims.
+
+**How it was tested.** Every qualified variant is localized as a parametrized test, so a
+regression in the traversal breaks the build. The reconvergence property is checked twice —
+once with the crafted probe where the output still passes, and once with the real
+`leak_last` variant, to show non-monotonicity is not an artifact of the probe. Alignment is
+checked against a candidate whose checkpoint records were deliberately reversed, which would
+break any implementation that had quietly come to rely on ordering.
+
+### Limitations at M4
+
+- Checkpoints are layer-granularity. Within a block only `attn_out`, `mlp_out`, and
+  `block_out` are exposed, so a result of `block0/attn_out` narrows the fault to attention —
+  it cannot distinguish a mask bug from a scaling bug inside that attention. Both variants of
+  families 1, 6, and 7 land on the same address for exactly this reason.
+- The traversal is a *total* order imposed on a partial one. Positions within a layer are
+  computed independently in a full-prefix pass and are not causally ordered relative to each
+  other; the order is declared and stable, not a claim about execution sequence.
+- Localization runs on the frozen output policy. A separate, looser policy for intermediate
+  activations may be worth calibrating later; it has not been.
+- No reduction, export, or benchmark yet.
+
+---
+
+## M5 — input reduction and replay — in progress
 
 ### Next exact action
 
-Implement `src/evallens/trace.py`: take a stable output failure, run a separate traced pass on
-both adapters, align checkpoints by `(request_id, layer_name, token_position, kind)`, and
-compare **all** aligned checkpoints in execution order — no binary search, because
-monotonicity cannot be assumed. Report the earliest *observed* divergence, and report
-`localization unavailable` when no checkpoints align.
+Implement `src/evallens/reduce.py`: structure-aware `ddmin` plus a separately implemented
+greedy single-deletion baseline, over the declared operations (remove earlier session
+requests retaining the target; remove token chunks; reduce padding; simplify token values
+toward `CANONICAL_TOKEN_ID`), with strict lexicographic size decrease, a predicate cache keyed
+by case hash plus adapter/weights/policy/environment identity, separate counting of logical
+queries, actual model runs and cache hits, and the 256-query / 60-second budgets.
 
-Then add the crafted reconvergence case: an intermediate discrepancy that disappears before
-the output, which a first-divergence search assuming monotonicity would mis-handle.
+Add `evallens.reduce` to `SEARCH_POLICY_MODULES` in `tests/unit/test_search_policy_blindness.py`
+so the reducer is held to the same blindness standard as the generator.
 
-M4 acceptance gate: known injected examples localize to the expected exposed checkpoint;
-unavailable alignment is reported accurately; and capture neither leaks across runs nor
-silently enters only one timing baseline.
+M5 acceptance gate: reductions stay valid and failing; session-state cases work; timeout
+preserves the best valid result; no invalid case is accepted; property tests show determinism
+and termination; and the reducer provably never reads a fault label.

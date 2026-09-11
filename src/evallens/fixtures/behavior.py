@@ -61,9 +61,37 @@ class Behavior:
     tolerance, so that exact bitwise equality is not the only control ever exercised.
     """
 
+    reconverge_probe: float = 0.0
+    """A crafted diagnostic, **not a fault**: makes an intermediate diverge and then reconverge.
+
+    When nonzero, the residual stream genuinely carries ``hidden + probe`` at the moment the
+    embedding checkpoint is recorded, and the probe is genuinely subtracted back out before
+    anything else consumes it. So the embedding checkpoint really does differ from the
+    reference while every downstream checkpoint, and the output, really do agree.
+
+    This exists to prove a negative: that localization does not assume the "diverged"
+    predicate is monotone along its traversal. A binary search for the first mismatch would
+    be wrong on exactly this shape. It is never part of the fault corpus and never counted as
+    a detection.
+    """
+
     @property
     def is_reference(self) -> bool:
         return self == Behavior()
+
+    @property
+    def is_injected_fault(self) -> bool:
+        """True only for genuine faults. Benign controls and diagnostic probes are excluded."""
+        if self.is_reference:
+            return False
+        without_diagnostics = Behavior(
+            **{
+                k: v
+                for k, v in self.to_dict().items()
+                if k not in {"perturb_scale", "reconverge_probe"}
+            }
+        )
+        return not without_diagnostics.is_reference
 
     def describe(self) -> str:
         if self.is_reference:

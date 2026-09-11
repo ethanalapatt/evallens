@@ -3,7 +3,7 @@
 Resolved from the project brief. This is the contract the implementation is held to; where
 the brief left a choice open, the decision and its reason are recorded here.
 
-**Status:** M1–M3 complete. Sections describing later milestones state the intended
+**Status:** M1–M4 complete. Sections describing later milestones state the intended
 design and are marked accordingly. Nothing in this document is a claim that unmeasured behavior has
 been measured.
 
@@ -272,16 +272,37 @@ become output-regression detections.
 
 ---
 
-## 7. Localization *(M4)*
+## 7. Localization
 
 Checkpoints are addressed by `(request_id, layer_name, token_position, kind)` with
-`kind ∈ {embedding, attn_out, mlp_out, block_out, final_norm, logits}`.
+`kind ∈ {embedding, attn_out, mlp_out, block_out, final_norm, logits}`. Alignment is by
+address, never by hook invocation order: one full-prefix reference call records a whole
+sequence while a cached candidate records one decode step at a time, so the *n*-th recorded
+tensor on one side has no correspondence to the *n*-th on the other.
 
-All aligned checkpoints are compared in execution order. No binary search: monotonicity
-cannot be assumed, because numerical discrepancies may appear, disappear, and reappear. The
-result is called the **earliest observed divergence** — evidence about where divergence
-becomes visible, not proof of root cause. If no checkpoints align, the output-level failure
-is retained and localization is reported as unavailable.
+**Traversal order:** `(request index, network depth, token position)`. Depth dominates because
+it is the causal axis — a difference at block 0 must precede any difference it causes at
+block 1. Within a depth, lower positions come first, since position `p` depends only on
+positions `≤ p`. This is a *total* order imposed on a partial one, declared and stable rather
+than a claim about execution sequence.
+
+**All aligned checkpoints are compared. No binary search.** Bisection needs the "diverged"
+predicate to be monotone along the traversal. Measured at M4: 10 of the 16 qualified variants
+have at least one checkpoint that returns inside tolerance after an earlier one left it. The
+linear pass over a bounded capture is cheap and is the only correct version.
+
+The result is the **earliest observed divergence** — evidence about where divergence becomes
+visible at the exposed checkpoints, not proof of root cause, and never an identification of an
+operation inside a layer. The caveat is attached to the serialized payload so a viewer cannot
+present it as a root cause. If no checkpoints align, or their values were dropped under the
+capture budget, the output-level failure is retained and localization is reported as
+unavailable — summaries are not element-wise evidence.
+
+Capture is a **separate traced pass**, run only after a stable failure is established, so its
+allocation and serialization cost never lands inside one side of a detection timing.
+
+**Granularity limit:** checkpoints are layer-level. A result of `block0/attn_out` narrows a
+fault to attention but cannot distinguish a mask bug from a scaling bug within it.
 
 ---
 

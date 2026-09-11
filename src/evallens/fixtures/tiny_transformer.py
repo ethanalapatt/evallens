@@ -343,8 +343,17 @@ class TinyTransformer(nn.Module):
     ) -> Tensor:
         """Run the model over ``[B, T]`` tokens and return ``[B, T, vocab_size]`` logits."""
         hidden = self.embed_tokens(token_ids) + self.embed_positions(position_ids)
+        probe = self.behavior.reconverge_probe
+        if probe:
+            # Crafted diagnostic, not a fault. The residual stream genuinely holds a different
+            # value while the checkpoint is recorded, and the probe is genuinely removed before
+            # anything consumes it, so the intermediate diverges and everything after it
+            # reconverges. See Behavior.reconverge_probe.
+            hidden = hidden + probe
         if recorder is not None:
             recorder("embed", CheckpointKind.EMBEDDING, hidden)
+        if probe:
+            hidden = hidden - probe
 
         for block in self.blocks:
             hidden = block(hidden, key_valid, cache, recorder)
