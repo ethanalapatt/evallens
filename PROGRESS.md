@@ -1082,6 +1082,33 @@ real browser at desktop and 390×844 mobile sizes. The file picker successfully 
 run's `record.json`; the reduced case stayed visible and the browser console had no warnings or
 errors. The 1440×4200 full-page capture is `docs/assets/viewer-demo.png`.
 
+Evidence commit: `e5aff45` (`M8: complete browser visual verification`).
+
+Final checks from that clean commit:
+
+```
+$ .venv/bin/python -m pytest -m 'not mps and not download' -q
+559 passed in 86.71s
+
+$ .venv/bin/python -m ruff check .
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check .
+67 files already formatted
+
+$ .venv/bin/python -m mypy src/evallens bench
+Success: no issues found in 29 source files
+
+$ .venv/bin/evallens doctor
+  git               e5aff45ca7aea992a89774fbb1f047d19c98100c dirty=False
+  self-test         [PASS] fixture vs FP64 NumPy oracle
+                    max |Δ| = 2.388e-07  (tolerance 2.0e-04)
+```
+
+Passed/failed/skipped accounting: **559 passed, 0 failed, 0 skipped**. The screenshot-integrity
+test is among those 559 checks; the browser inspection and file-picker interaction are manual
+execution evidence recorded above, not silently counted as pytest cases.
+
 ### Acceptance gate
 
 | Gate | Evidence |
