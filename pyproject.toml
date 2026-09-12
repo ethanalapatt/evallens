@@ -52,6 +52,10 @@ filterwarnings = ["error::DeprecationWarning:evallens.*"]
 line-length = 100
 target-version = "py311"
 src = ["src", "tests", "bench"]
+# Exported reproductions are verbatim artifacts of `evallens export`, not hand-written source.
+# Letting the formatter touch them would make the committed evidence drift from what the
+# exporter actually emits, so a reviewer regenerating the package would see a spurious diff.
+extend-exclude = ["examples/reproductions"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I", "UP", "B", "C4", "SIM", "RUF"]
