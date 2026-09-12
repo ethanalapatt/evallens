@@ -821,21 +821,165 @@ remain unverified by execution. This is an open item for M8.
 
 ---
 
-## M7 — complete benchmark and generated report — in progress
+## M7 — complete benchmark and generated report — complete (2026-09-11)
+
+### What was built
+
+`bench/run.py` — a declared-workload harness. Two presets (`smoke`, `full`). The matrix is
+enumerated *before* any trial runs: every declared trial id is computed up front and frozen
+into `manifest.json` alongside the git commit and clean-tree flag, hardware and thread
+configuration, Python/torch/numpy versions, the fixture config id, weights SHA-256, tolerance
+policy id, the seed cohorts, the qualified mutant list, the control list, and generator and
+reducer version strings. Trials then append one raw JSONL record each to `detection.jsonl`,
+`controls.jsonl`, `reductions.jsonl`, and `exports.jsonl`. Completeness is checked *after the
+fact* against the frozen list rather than assumed from a loop that ran to the end.
+
+The reduction cohort is selected and written down *before* either reducer is constructed, and
+both reducers then run from the identical frozen starting case under identical budgets. That
+ordering is the whole point: a cohort chosen after seeing one reducer's behavior would not be a
+paired comparison.
+
+`bench/report.py` — builds `RESULTS.md` from raw records only, never from a running process.
+Sixteen integrity codes are fatal: `synthetic_run`, `no_declared_trials`, `missing_trials`,
+`duplicate_trials`, `unqualified_scored`, `missing_weights_hash`, `missing_policy_id`,
+`missing_config_id`, `missing_strategy`, `mismatched_reducer_cohorts`, `cohort_drift`,
+`unpaired_start`, `reduction_does_not_fail`, `unknown_commit`, `dirty_source`, and
+`incomplete_run`. Any one of them renders an explicitly-labeled incomplete diagnostic instead
+of a headline table. Detection intervals resample **whole fault families**, because five seeds
+against one mutant are five measurements of the same fault, not five independent observations.
+
+### Commands actually run, and their output
+
+```
+$ .venv/bin/python -m pytest -q -m 'not mps and not download'
+526 passed in 37.41s
+
+$ .venv/bin/python -m ruff check .
+All checks passed!
+
+$ .venv/bin/python -m ruff format --check .
+60 files already formatted
+
+$ .venv/bin/python -m mypy src/evallens bench
+Success: no issues found in 29 source files
+```
+
+The full run was made from a **committed, clean** working tree (commit `8793258`), because the
+report's `dirty_source` gate refuses to publish otherwise — and it did refuse, on the smoke
+pilot, which is how the gate was confirmed to work:
+
+```
+$ .venv/bin/python -m bench.run --preset full --out artifacts/runs/full --config configs/cpu.toml
+  [202/202] reduction: batch_indexing.v_roll#case_8e90d25
+  exports: 8 attempted
+done in 80.4s — artifacts/runs/full
+real 1:22.09
+
+$ .venv/bin/python -m bench.report artifacts/runs/full --out RESULTS.md
+wrote RESULTS.md
+```
+
+Regenerating into a second path and diffing: **byte-identical**.
+
+### Measured outcome
+
+All figures below are read back out of `RESULTS.md`; none is typed by hand here.
+
+| Metric | Value |
+|---|---|
+| Declared trials | 202, all produced records |
+| Detection within budget | 160/160 = 100.0% (0 censored) |
+| Family-level 95% interval | 100.0%, degenerate — a saturated corpus, not a precise estimate |
+| False positives on known-good cases | 0/2560 = 0.0% |
+| Handwritten controls | 7/7 pass |
+| Localization coverage | 160/160 = 100.0%, 19 distinct earliest-observed addresses |
+| Divergence reconverges later | 108/160 |
+| ddmin median reduction | 35.2x, median 12 queries |
+| greedy median reduction | 35.2x, median 82 queries |
+| Clean-room reproduction | 8/8, 0 packages imported the installed EvalLens |
+| Peak worker RSS | 246.5 MiB of a 4096.0 MiB budget |
+| Wall time | 80.4s (Apple M3, 8 CPUs, 4 threads, CPU float32) |
+
+### The result that did not go my way
+
+**ddmin produced no smaller case than the greedy baseline on any of the 16 paired cases.**
+Sixteen ties, zero wins, zero losses on size. This is published as measured; the cohort was
+frozen before either reducer ran, and nothing was re-selected after seeing it.
+
+ddmin's real advantage here is cost: a median **6.2x** fewer predicate queries (12 vs 82), and
+each query is a pair of model executions. On the `cache_indexing` and `decode_position` cases
+it was 6 queries against 85. So the honest claim is *"reaches the same minimum far cheaper"*,
+not *"reduces further"* — and on this corpus, at these budgets, greedy is a perfectly adequate
+reducer if you do not care about query cost.
+
+**The corpus is saturated.** Both generators detect 100% of trials, so this benchmark
+**cannot discriminate between them** — the boundary-aware generator's median-cases-to-detection
+(2.5) is identical to uniform-valid's. The family bootstrap interval is degenerate for the same
+reason. A benchmark that every method passes measures nothing about the methods. Both the
+report and this note say so instead of presenting 100% as a strong result.
+
+### Acceptance gate
+
+| Gate | Evidence |
+|---|---|
+| The measured declared cohort is complete | 202 declared trial ids frozen in `manifest.json` before the run; `check_integrity` matches records against that list and raises `missing_trials`/`duplicate_trials`; report header reads `202, all produced records` |
+| All verdicts are accounted for | the known-good verdict table enumerates every verdict seen (`pass: 2560`) rather than reporting a single pass rate; `ERROR`/`UNSTABLE`/`INVALID` are never folded into a detection count |
+| Clean controls have reported outcomes | 0/2560 generated false positives, plus 7/7 handwritten controls, both printed with their denominators |
+| Reduction baselines are paired | cohort keys recorded before either reducer ran; `mismatched_reducer_cohorts`, `cohort_drift`, `unpaired_start`, and `missing_strategy` are fatal; the per-case table shows both strategies on the same starting case |
+| The report regenerates deterministically | regenerated to a second path and `diff`-compared: byte-identical |
+| A headline run requires clean source | `dirty_source` is fatal; the smoke pilot was correctly refused on a dirty tree, and the full run was made from commit `8793258` with a clean tree |
+| Nothing synthetic can reach `RESULTS.md` | `manifest["synthetic"]` is `False` for real runs; `synthetic_run` is a fatal code, so a timing fixture cannot produce this file |
+
+### Evidence paths
+
+- `RESULTS.md` — the generated report
+- `artifacts/runs/full/manifest.json` — the frozen declared workload (80 KB)
+- `artifacts/runs/full/{detection,controls,reductions,exports}.jsonl` — raw records
+- `artifacts/runs/full/summary.json`
+- `tests/integration/test_report_integrity.py` — the integrity gates, each tested by deleting,
+  duplicating, or corrupting records in a real run directory
+
+The eight exported reproduction packages under `artifacts/runs/full/repros/` (4.8 MB, mostly
+weights) are **not** committed; `examples/reproductions/cache-write-overwrite/` is the preserved
+real artifact.
+
+### Teach-back
+
+The thing that makes this report trustworthy is not that it is generated — a generator can
+happily render a lie. It is that the *denominator was written down before the numerator
+existed*. `manifest.json` contains all 202 trial ids and the qualified mutant list, committed to
+disk before any model ran. The report then checks records against that list rather than
+counting whatever happened to be in the directory. Without that ordering, a crashed trial
+silently leaves the denominator, and a 100% detection rate can mean "everything that finished,
+finished" — the classic survivorship result.
+
+The second thing is the family-level bootstrap. Resampling 160 trials would give a tight,
+meaningless interval, because 160 trials are really 8 families measured repeatedly. Resampling
+families gives an honest interval — which here turned out to be degenerate, and saying so is
+more informative than reporting a fake ±2%.
+
+The third is that `dirty_source` is fatal rather than a warning. A headline number produced from
+uncommitted source is not reproducible by anyone, including me a week later, because the code
+that produced it no longer exists anywhere. Being forced to commit first is the point.
+
+### Limitations at M7
+
+- **Eight families, sixteen variants, all self-injected.** This measures detection of faults
+  this project wrote. No claim is made about unknown, real-world regressions.
+- **The corpus is saturated at this budget** and therefore cannot rank the two generators, or
+  distinguish "good search" from "easy targets".
+- **One fixture, one machine.** `tiny-2L-64d-4h`, Apple M3, CPU float32, 4 threads. Nothing
+  here says how any of it scales.
+- **ddmin does not beat greedy on size**, only on query cost. See above.
+- Reduction ratios are dominated by how large the generated starting cases happen to be; a
+  35.2x median is a statement about generator output length as much as about the reducer.
+- MPS is present on this machine and deliberately unused.
 
 ### Next exact action
 
-Implement `bench/run.py`: a smoke preset and a full declared CPU preset that write raw JSONL
-trial records plus a frozen manifest (git commit and clean state, hardware and thread
-configuration, fixture/weights/config/tolerance hashes, seeds, the qualified mutant and control
-manifest, and generator/reducer versions). Run the smoke pilot first to estimate duration, then
-freeze the full matrix **before** inspecting any outcome.
-
-Then `bench/report.py`, generating `RESULTS.md` from raw records only, rejecting missing
-required trials, duplicate trial IDs, inconsistent hashes, invalid denominators, and mismatched
-comparison cohorts — and producing an explicitly incomplete diagnostic report for an
-interrupted study rather than a publishable table.
-
-M7 acceptance gate: the measured declared cohort is complete; all verdicts are accounted for;
-clean controls have reported outcomes; reduction baselines are paired; and the report
-regenerates deterministically.
+M8 — reviewer polish. Finish the viewer's remaining affordances and **visually confirm the
+rendered page in a browser** (still unverified: the browser-automation extension was not
+connected during M6, so no screenshot or in-browser DOM assertion exists). Capture a screenshot
+or GIF of a completed demo, which does not yet exist and has never been claimed to. Write
+`docs/` with a short architecture explanation, document the supported scope and its boundaries
+explicitly, and produce the interview guide.

@@ -1,0 +1,14 @@
+{
+  "complete": true,
+  "completed_at": "2026-09-11T20:17:10",
+  "model_init_ns": 18574000,
+  "peak_rss_bytes": 258473984,
+  "preset": "full",
+  "rss_exceeded": false,
+  "rss_limit_bytes": 4294967296,
+  "run_id": "full-20260911-201550",
+  "trials_declared": 202,
+  "trials_written": 202,
+  "wall_time_ns": 80409131875,
+  "wall_time_s": 80.409131875
+}
