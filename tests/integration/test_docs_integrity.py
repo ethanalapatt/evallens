@@ -118,12 +118,20 @@ def test_no_document_claims_a_globally_smallest_reduction() -> None:
             assert phrase not in text, f"{path.name} overclaims minimality: {phrase!r}"
 
 
-def test_the_incomplete_media_task_is_still_marked_incomplete() -> None:
-    """The recording does not exist. If that ever changes, this test should be updated, not
-    deleted -- and only after an actual recording is committed."""
+def test_the_verified_viewer_screenshot_is_committed_and_documented() -> None:
+    """The visual acceptance gate needs binary evidence, not only a prose claim.
+
+    Parse the PNG's IHDR directly so the check stays dependency-free and cannot pass on an
+    empty placeholder or a renamed text file.
+    """
+    screenshot = ROOT / "docs" / "assets" / "viewer-demo.png"
+    data = screenshot.read_bytes()
+    assert data[:8] == b"\x89PNG\r\n\x1a\n"
+    assert data[12:16] == b"IHDR"
+    assert int.from_bytes(data[16:20], "big") == 1440
+    assert int.from_bytes(data[20:24], "big") == 4200
+
     recording = (ROOT / "docs" / "RECORDING.md").read_text()
-    assert "incomplete" in recording.lower()
-    existing = list((ROOT / "docs").glob("*.gif")) + list((ROOT / "docs").glob("*.cast"))
-    assert not existing, (
-        "a recording now exists; update README/PROGRESS/RECORDING to stop saying it does not"
-    )
+    assert "assets/viewer-demo.png" in recording
+    for stale_claim in ("viewer page has never been seen", "no screenshot, gif, or video"):
+        assert stale_claim not in recording.lower()

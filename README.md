@@ -33,10 +33,10 @@ against its own handwritten trigger. Those are qualification checks, not detecti
 whether a *generator* finds them under budget is a separate question, measured in M7.
 
 `PROGRESS.md` tracks each milestone with the actual commands and their output, including what
-was *not* verified. One acceptance item was never satisfied: **no screenshot, GIF, or video of a
-completed demo exists**, because no capture tooling or browser extension was available.
-`docs/RECORDING.md` has tested steps for producing one. The viewer's render path is executed by
-tests; its appearance has never been seen.
+was *not* verified. The viewer has now been loaded with a fresh real demo record in a browser,
+checked at desktop and 390×844 mobile widths, reloaded through its file picker, and checked for
+browser warnings and errors. The committed [full-page screenshot](docs/assets/viewer-demo.png)
+shows the actual run; it is not a mockup. A terminal video or GIF remains optional follow-up.
 
 The full run (202 declared trials, 80.4s on an Apple M3, CPU, 4 threads) detected all 160
 qualified mutant/seed/generator trials within budget, produced **0/2560** false positives on
@@ -70,7 +70,7 @@ machine (Apple M3, macOS 15.6, Python 3.13.7, PyTorch 2.14.0, NumPy 2.5.3) it re
 .venv/bin/python -m mypy src/evallens
 ```
 
-501 tests pass at M6.
+559 tests pass at M8.
 
 ## See it work
 
@@ -110,6 +110,11 @@ Inspect the run in the offline viewer (loopback only, no backend):
 ```bash
 .venv/bin/evallens view artifacts/demo
 ```
+
+The full viewer from a real completed run is preserved in
+[`docs/assets/viewer-demo.png`](docs/assets/viewer-demo.png). It includes the deliberately
+injected-fault disclosure, original and reduced cases, checkpoint evidence, reduction history,
+clean-room reproduction result, timeline, and environment manifest.
 
 ### Other commands
 
@@ -201,8 +206,8 @@ the greedy baseline on size, and every fault measured is one this project inject
 - [`docs/SCOPE.md`](docs/SCOPE.md) — what is supported, what is not, and how to read the numbers
 - [`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md) — what to be able to explain, and the
   questions to answer before claiming to
-- [`docs/RECORDING.md`](docs/RECORDING.md) — tested steps for capturing a demo recording; the
-  media task itself is **incomplete** and no screenshot or GIF exists
+- [`docs/RECORDING.md`](docs/RECORDING.md) — browser-verification evidence and the tested steps
+  for capturing an optional terminal video or GIF
 - [`docs/demo-transcript.txt`](docs/demo-transcript.txt) — verbatim captured output of a real run
 - [`SPEC.md`](SPEC.md) — the resolved technical contract, and why each design choice was made
 - [`PROGRESS.md`](PROGRESS.md) — actual milestone state, commands, output, and limitations

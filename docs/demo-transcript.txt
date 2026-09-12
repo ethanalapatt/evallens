@@ -3,10 +3,10 @@ EvalLens — verbatim terminal transcript
 
 This file is real captured stdout/stderr from the two commands shown, run on 2026-09-11 on the
 machine described in the `doctor` output below. It is not retyped, edited, or prettified, and
-it is not a substitute for the screen recording described in docs/RECORDING.md -- that media
-task is still incomplete. The `git ... dirty=True` line is accurate: docs were being written in
-the working tree at capture time. The published benchmark in RESULTS.md was made from a clean
-tree, which the report's integrity gate enforces separately.
+it is separate from the browser-verified viewer screenshot described in docs/RECORDING.md. The
+`git ... dirty=True` line is accurate: docs were being written in the working tree at capture
+time. The published benchmark in RESULTS.md was made from a clean tree, which the report's
+integrity gate enforces separately.
 
 $ evallens doctor
 EvalLens 0.1.0

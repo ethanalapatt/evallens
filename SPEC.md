@@ -5,8 +5,9 @@ the brief left a choice open, the decision and its reason are recorded here.
 
 **Status:** M1–M8 complete; measured results in `RESULTS.md`. Every section now describes
 behavior that exists and is tested. Nothing in this document is a claim that unmeasured behavior
-has been measured; the one acceptance item never satisfied — a screen recording of the demo — is
-recorded as incomplete in `PROGRESS.md` and `docs/RECORDING.md`.
+has been measured. The final visual gate is backed by a browser-verified full-page screenshot of
+a fresh real demo in `docs/assets/viewer-demo.png`; a terminal video or GIF is optional and has
+not been recorded.
 
 ---
 

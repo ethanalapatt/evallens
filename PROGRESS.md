@@ -18,10 +18,10 @@ Actual state of the build. Status values are `not started`, `in progress`, `bloc
 records of a 202-trial run made on a clean tree at commit `8793258`. Nothing in it is
 hand-entered, and the report refuses to publish from uncommitted source.
 
-**One acceptance item was never satisfied:** no screenshot, GIF, or video of a completed demo
-exists, because no capture tooling or browser extension was reachable. See M8's limitations and
-`docs/RECORDING.md`. The viewer's render path is executed by tests; its *appearance* has never
-been seen.
+**Visual acceptance is complete:** `docs/assets/viewer-demo.png` is a 1440×4200 full-page
+browser screenshot of fresh real run `demo-20260912-014607`. The viewer was inspected at desktop
+and 390×844 mobile widths, reloaded through its file picker, and checked for browser warnings and
+errors. See M8 and `docs/RECORDING.md`. No terminal video or GIF has been recorded.
 
 **Remote:** `origin` → `https://github.com/ethanalapatt/evallens` (public).
 
@@ -1004,10 +1004,11 @@ evallens, so it cannot pick up a stranger's `bench/`), and prints an explanation
 of explanation and exit 2 instead of a `ReportError` traceback.
 
 **The viewer, actually executed.** M6 left this open: the rendered page had never been
-confirmed, because no browser-automation extension was connected. It still is not — no browser
-was reachable in this session either, so there is still no screenshot. But node 22 *is*
-available, so `tests/viewer/render.mjs` now runs the real `viewer/viewer.js` over a real
-`record.json` under a minimal DOM shim and prints what the page would contain.
+confirmed, because no browser-automation extension was connected. The initial M8 work used node
+22 to run the real `viewer/viewer.js` over a real `record.json` under a minimal DOM shim and print
+what the page would contain. On 2026-09-12 a browser became available: a fresh demo was loaded,
+inspected at desktop and 390×844 mobile widths, reloaded through the real file picker, and checked
+for console warnings and errors. `docs/assets/viewer-demo.png` preserves the complete page.
 
 The shim serves only the element ids that actually appear in `index.html` and throws for any
 other. That is the part worth having: a browser would not raise if `viewer.js` reached for a
@@ -1018,8 +1019,8 @@ the *record* cannot catch.
 implementation is wrong: the oracle, hook-order alignment, the reduction well-ordering, and
 search blindness), `docs/SCOPE.md` (supported, not supported, and how to read the numbers),
 `docs/INTERVIEW_GUIDE.md` (what to be able to explain, 18 questions to answer, and six things to
-demonstrate rather than assert), `docs/RECORDING.md` (tested steps for a recording that does not
-exist), and `docs/demo-transcript.txt` (verbatim captured output, unedited).
+demonstrate rather than assert), `docs/RECORDING.md` (browser evidence plus optional video/GIF
+steps), and `docs/demo-transcript.txt` (verbatim captured output, unedited).
 
 **Documentation held to the same standard as results.** `tests/integration/test_docs_integrity.py`
 resolves every relative markdown link, and asserts that every headline figure quoted in prose
@@ -1073,13 +1074,21 @@ $ $TMP/freshenv/bin/evallens report $TMP/freshbench --out .../SMOKE.md --allow-d
 The `dirty_source` warning is correct and expected: docs were being edited in the tree at the
 time. It is a warning only because `--allow-dirty` was passed; without it the report refuses.
 
+**Visual follow-up, run for real on 2026-09-12.** A fresh CPU demo completed as run
+`demo-20260912-014607`: case 5 produced the deliberate cache fault, reduction reached 14 → 2
+tokens in 4 predicate queries, fresh-process replay succeeded, and the exported reproduction
+verified without importing EvalLens. The viewer was served on `127.0.0.1`, then checked in a
+real browser at desktop and 390×844 mobile sizes. The file picker successfully reloaded that
+run's `record.json`; the reduced case stayed visible and the browser console had no warnings or
+errors. The 1440×4200 full-page capture is `docs/assets/viewer-demo.png`.
+
 ### Acceptance gate
 
 | Gate | Evidence |
 |---|---|
 | A fresh CPU setup can run the demo | run above in a clean virtualenv: `doctor`, `demo`, `repro.py --expect-mismatch`, `bench`, and `report` all succeeded with nothing borrowed from the dev environment |
 | Source and evidence links work | `test_every_relative_link_resolves` over all 4 top-level and 4 `docs/` markdown files |
-| The viewer displays actual records | `tests/integration/test_viewer_render.py` — 10 tests executing the real `viewer.js` over a real `record.json`; recorded values, both cases, the injected-fault banner, and the qualified minimality claim all reach the page, and the empty/error/`not recorded` states are selected correctly |
+| The viewer displays actual records | `tests/integration/test_viewer_render.py` — 10 tests executing the real `viewer.js` over a real `record.json`; plus browser inspection at desktop and mobile sizes, a successful file-picker reload, a clean console, and `docs/assets/viewer-demo.png` |
 | No fake measurements remain | `test_the_headline_figures_quoted_in_prose_are_in_the_generated_report` ties every quoted figure to `RESULTS.md`; `test_the_viewer_never_hardcodes_a_measurement`; `synthetic_run` is a fatal report code |
 | Docs explain the failure oracle | `docs/ARCHITECTURE.md` §1 — why equality fails at 2.4e-07, non-finite comparison by kind, disjoint verdicts, calibration discipline, stability replay |
 | Docs explain checkpoint alignment | §2 — why hook order is wrong, the semantic address, earliest *observed* divergence, and the measured 108/160 reconvergence that rules out bisection |
@@ -1091,6 +1100,7 @@ time. It is a warning only because `--allow-dirty` was passed; without it the re
 ### Evidence paths
 
 - `docs/ARCHITECTURE.md`, `docs/SCOPE.md`, `docs/INTERVIEW_GUIDE.md`, `docs/RECORDING.md`
+- `docs/assets/viewer-demo.png` — full-page browser evidence from real run `demo-20260912-014607`
 - `docs/demo-transcript.txt` — verbatim, unedited
 - `tests/viewer/render.mjs` — the DOM-shim harness
 - `tests/integration/test_viewer_render.py` — 10 tests
@@ -1102,11 +1112,12 @@ time. It is a warning only because `--allow-dirty` was passed; without it the re
 The M8 work that mattered was not the prose. It was noticing that two of the project's
 documentation claims were untested, and that "untested" and "false" are uncomfortably close.
 
-The viewer was claimed to display real records; what was actually verified was that the
+The viewer was claimed to display real records; what was initially verified was that the
 *record* contained the fields `viewer.js` reads. Those are different statements, and the gap
 between them is where a typo in an element id lives. Running the real script under a shim that
-refuses unknown ids closes it. It still does not close the visual gap — nobody has seen this
-page — and PROGRESS says so rather than letting "the viewer is tested" stand in for it.
+refuses unknown ids closes the structural gap. The 2026-09-12 browser pass closes the visual gap:
+the desktop and mobile layouts were inspected, the file picker was exercised, the console was
+checked, and the complete rendered page was preserved rather than described from memory.
 
 The second was that prose quoting a measurement is a copy of that measurement, and copies go
 stale. `RESULTS.md` is generated and cannot lie; a README saying "108 of 160" is hand-typed and
@@ -1116,14 +1127,11 @@ describing a run that no longer exists.
 
 ### Limitations at M8
 
-- **No screenshot, GIF, or video exists.** No capture tooling (`asciinema`, `vhs`, `ttyrec`) is
-  installed and no browser extension was reachable in either session where it was attempted.
-  `docs/RECORDING.md` gives tested steps; the media task is **incomplete** and is not claimed
-  otherwise. A test asserts that no recording file has appeared, so the claim cannot silently
-  go stale in either direction.
-- **The viewer has never been seen.** Layout, CSS, responsive behavior, dark mode, and the
-  file-picker interaction are unverified by execution. The JavaScript render path is verified;
-  the appearance is not.
+- **No terminal video or GIF exists.** The committed evidence is a full-page browser screenshot
+  of a completed run. It proves the captured state and layout, not motion through the terminal
+  commands; `docs/RECORDING.md` retains optional motion-capture steps.
+- **Light mode was not visually checked.** Desktop and 390×844 responsive layouts were inspected
+  in dark mode, the file picker was exercised, and the browser console was clean.
 - **The viewer tests skip without node.** CI installs it so they run there; a contributor
   without node gets a skip, and a skipped test is not evidence.
 - All M7 measurement limitations stand unchanged: eight self-injected families, one fixture, one
@@ -1132,14 +1140,15 @@ describing a run that no longer exists.
 
 ### Next exact action
 
-All eight milestones are complete. The highest-value remaining work, in order:
+All eight milestones and their acceptance items are complete. The highest-value remaining work,
+in order:
 
-1. **Record the demo** using `docs/RECORDING.md` on a machine with capture tooling, and confirm
-   the viewer visually. This is the only acceptance item in the whole project that was never
-   satisfied.
-2. **Desaturate the corpus** so the benchmark can discriminate: shrink the per-trial case budget
+1. **Desaturate the corpus** so the benchmark can discriminate: shrink the per-trial case budget
    until detection rates separate, or add fault families that are genuinely hard to trigger. A
    benchmark everything passes cannot rank anything, and right now this one cannot.
-3. **Find a case where ddmin actually beats greedy on size** — or establish that on this class of
+2. **Find a case where ddmin actually beats greedy on size** — or establish that on this class of
    input it does not, which would be the more interesting result and is currently the honest
    reading of sixteen ties.
+3. **Optionally record a terminal video or GIF** using `docs/RECORDING.md`. The screenshot gate is
+   satisfied; motion capture would make the reviewer path easier to follow but adds no numerical
+   evidence.
