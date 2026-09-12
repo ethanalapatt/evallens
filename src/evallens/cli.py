@@ -506,6 +506,145 @@ def _run_export(args: argparse.Namespace) -> int:
 # --- view ------------------------------------------------------------------------------------------
 
 
+_BENCH_NOT_AVAILABLE = (
+    "the benchmark corpus is not importable from here.\n"
+    "\n"
+    "`bench` is deliberately not part of the installed `evallens` package. It holds the\n"
+    "injected-fault definitions, their trigger fixtures, and the expected answers, and the\n"
+    "shipped search code must not be able to import any of that even by accident -- there is\n"
+    "a test that enforces it. So the benchmark runs from a repository checkout only:\n"
+    "\n"
+    "    git clone <repo> && cd evallens\n"
+    "    python -m pip install -e '.[dev]'\n"
+    "    evallens bench --preset smoke --out artifacts/runs/smoke\n"
+)
+
+
+def _checkout_root() -> Path | None:
+    """Find the EvalLens checkout containing ``bench/``, starting from the current directory.
+
+    ``bench`` is not an installed package, and a console script -- unlike ``python -m`` -- does
+    not put the working directory on ``sys.path``. So the root has to be located explicitly.
+    The `pyproject.toml` name check is what keeps this from importing a stranger's `bench`
+    package that merely happens to sit in some parent directory.
+    """
+    for candidate in (Path.cwd(), *Path.cwd().parents):
+        pyproject = candidate / "pyproject.toml"
+        if not (candidate / "bench" / "run.py").is_file() or not pyproject.is_file():
+            continue
+        try:
+            text = pyproject.read_text(encoding="utf-8")
+        except OSError:  # pragma: no cover - unreadable parent directory
+            continue
+        if 'name = "evallens"' in text:
+            return candidate
+    return None
+
+
+def _import_bench(module: str) -> Any:
+    """Import a ``bench`` module, or return ``None`` if this is not a checkout.
+
+    Returning ``None`` rather than raising at module import keeps `evallens doctor` and the
+    rest of the CLI working on an installed wheel with no repository present.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        pass
+    root = _checkout_root()
+    if root is None:
+        return None
+    entry = str(root)
+    if entry not in sys.path:
+        sys.path.insert(0, entry)
+    try:
+        return importlib.import_module(module)
+    except ImportError:
+        return None
+
+
+def _add_bench(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "bench",
+        help="Run a benchmark preset and write raw JSONL evidence.",
+        description=(
+            "Runs a declared benchmark preset against the injected-fault corpus. The trial "
+            "matrix is frozen into manifest.json before any trial runs, and this command "
+            "writes raw per-trial records only -- it computes no rates. Use `evallens report` "
+            "to derive RESULTS.md from them. Requires a repository checkout."
+        ),
+    )
+    parser.add_argument(
+        "--preset",
+        default="smoke",
+        help="Preset name. `smoke` is a fast pilot; `full` is the declared headline workload.",
+    )
+    parser.add_argument("--out", required=True, help="Run directory to create.")
+    parser.add_argument("--config", default=None, help="TOML configuration file.")
+    parser.add_argument("--quiet", action="store_true", help="Suppress per-trial progress.")
+    parser.set_defaults(func=_run_bench)
+
+
+def _run_bench(args: argparse.Namespace) -> int:
+    run = _import_bench("bench.run")
+    if run is None:
+        print(f"evallens bench: {_BENCH_NOT_AVAILABLE}", file=sys.stderr)
+        return 2
+    if args.preset not in run.PRESETS:
+        available = ", ".join(sorted(run.PRESETS))
+        print(
+            f"unknown preset {args.preset!r}; available presets are: {available}",
+            file=sys.stderr,
+        )
+        return 2
+    argv = ["--preset", args.preset, "--out", args.out]
+    if args.config:
+        argv += ["--config", args.config]
+    if args.quiet:
+        argv.append("--quiet")
+    return int(run.main(argv))
+
+
+def _add_report(subparsers: argparse._SubParsersAction) -> None:
+    parser = subparsers.add_parser(
+        "report",
+        help="Generate RESULTS.md from a completed benchmark run.",
+        description=(
+            "Derives RESULTS.md from a run directory's raw records. Every figure comes from "
+            "those records; nothing is hand-entered. Refuses to publish a headline table for "
+            "an incomplete or inconsistent study, or for a run made from uncommitted source, "
+            "and emits an explicitly incomplete diagnostic instead. Requires a checkout."
+        ),
+    )
+    parser.add_argument("run_dir", help="Benchmark run directory written by `evallens bench`.")
+    parser.add_argument("--out", default="RESULTS.md", help="Output path.")
+    parser.add_argument(
+        "--allow-dirty",
+        action="store_true",
+        help=(
+            "Downgrade dirty or unknown source from fatal to a warning. The result is a "
+            "diagnostic for your own use and is not publishable."
+        ),
+    )
+    parser.add_argument("--metrics", default=None, help="Also write computed metrics as JSON.")
+    parser.set_defaults(func=_run_report)
+
+
+def _run_report(args: argparse.Namespace) -> int:
+    report = _import_bench("bench.report")
+    if report is None:
+        print(f"evallens report: {_BENCH_NOT_AVAILABLE}", file=sys.stderr)
+        return 2
+    argv = [args.run_dir, "--out", args.out]
+    if args.allow_dirty:
+        argv.append("--allow-dirty")
+    if args.metrics:
+        argv += ["--metrics", args.metrics]
+    return int(report.main(argv))
+
+
 def _add_view(subparsers: argparse._SubParsersAction) -> None:
     parser = subparsers.add_parser(
         "view",
@@ -554,6 +693,8 @@ def build_parser() -> argparse.ArgumentParser:
     _add_compare(subparsers)
     _add_reduce(subparsers)
     _add_export(subparsers)
+    _add_bench(subparsers)
+    _add_report(subparsers)
     _add_view(subparsers)
     return parser
 

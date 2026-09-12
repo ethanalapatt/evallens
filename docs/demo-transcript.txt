@@ -1,0 +1,51 @@
+EvalLens — verbatim terminal transcript
+=======================================
+
+This file is real captured stdout/stderr from the two commands shown, run on 2026-09-11 on the
+machine described in the `doctor` output below. It is not retyped, edited, or prettified, and
+it is not a substitute for the screen recording described in docs/RECORDING.md -- that media
+task is still incomplete. The `git ... dirty=True` line is accurate: docs were being written in
+the working tree at capture time. The published benchmark in RESULTS.md was made from a clean
+tree, which the report's integrity gate enforces separately.
+
+$ evallens doctor
+EvalLens 0.1.0
+  python            3.13.7  (/Users/ethanalapatt/vscode-pythonprojects/evallens/.venv/bin/python)
+  torch / numpy     2.14.0 / 2.5.3
+  platform          macOS-15.6-arm64-arm-64bit-Mach-O
+  chip / cpus       Apple M3 / 8
+  physical memory   16.0 GiB
+  torch threads     4 (interop 1)
+  default dtype     torch.float32
+  mps / cuda        available=True / available=False
+  thermal           unavailable
+  git               f787b55649495d3a065fe0abc8afd2225b1faff1 dirty=True
+  process rss       204.2 MiB
+
+  fixture           tiny-2L-64d-4h-89a0eb72a852
+  parameters        120,801
+  weights sha256    e954a43b36aaeb31595503cc0c0b1aec...
+
+  self-test         [PASS] fixture vs FP64 NumPy oracle
+                    max |Δ| = 2.388e-07  (tolerance 2.0e-04)
+
+$ evallens demo --out artifacts/demo
+EvalLens demo — demo-20260911-202128
+NOTE: this example uses a fault EvalLens injected on purpose. It is not a bug discovered in PyTorch or any other third-party library.
+
+  [  0.04s] search                 stable failure on case 5 of 64 (cached_decode), max |Δ| = 7.263e-02
+  [  0.01s] localize               earliest observed divergence at r0/block0/pos12/attn_out; 16/126 aligned checkpoints diverge (discrepancy reconverges later; not monotone)
+  [  0.05s] reduce                 14 -> 2 valid tokens (7.0x) in 4 predicate queries; one_minimal_wrt_declared_operations
+  [  0.58s] verify_reduced_case    reproduced in a fresh process (0.58s)
+  [  0.06s] export                 wrote a self-contained package to repro/
+  [  0.55s] verify_export          ran from a fresh temporary directory without importing EvalLens (0.55s)
+
+  original case     case_605dd27327c54e4e
+  reduced case      case_7287c8c752e22ccf  tokens=[21, 1]
+  earliest observed r0/block0/pos1/attn_out
+  max |Δ|           2.641718e-01
+
+  artifacts         /Users/ethanalapatt/vscode-pythonprojects/evallens/artifacts/demo
+  reproduction      /Users/ethanalapatt/vscode-pythonprojects/evallens/artifacts/demo/repro
+  run it            python /Users/ethanalapatt/vscode-pythonprojects/evallens/artifacts/demo/repro/repro.py --expect-mismatch
+  view it           evallens view /Users/ethanalapatt/vscode-pythonprojects/evallens/artifacts/demo

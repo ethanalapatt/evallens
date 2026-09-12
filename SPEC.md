@@ -3,9 +3,10 @@
 Resolved from the project brief. This is the contract the implementation is held to; where
 the brief left a choice open, the decision and its reason are recorded here.
 
-**Status:** M1–M7 complete; measured results in `RESULTS.md`. Sections describing later
-milestones state the intended design and are marked accordingly. Nothing in this document is a claim that unmeasured behavior has
-been measured.
+**Status:** M1–M8 complete; measured results in `RESULTS.md`. Every section now describes
+behavior that exists and is tested. Nothing in this document is a claim that unmeasured behavior
+has been measured; the one acceptance item never satisfied — a screen recording of the demo — is
+recorded as incomplete in `PROGRESS.md` and `docs/RECORDING.md`.
 
 ---
 

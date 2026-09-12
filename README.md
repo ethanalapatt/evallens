@@ -20,10 +20,11 @@ its own.
 
 ## Status
 
-M1 through M3 are complete: the reference fixture and its independent FP64 oracle, the case
-schema, the reference and candidate adapters, the numerical comparator, stability replay, the
-injected-fault corpus, and the two input generators all work and are tested on the target
-machine.
+All eight milestones are complete. The reference fixture and its independent FP64 oracle, the
+case schema, the reference and candidate adapters, the numerical comparator, stability replay,
+the injected-fault corpus, the two input generators, checkpoint localization, input reduction,
+reproduction export, the benchmark, and the generated report all work and are tested on the
+target machine. 559 tests pass; `ruff` and `mypy --strict` are clean.
 
 All 7 known-good controls are stable passes — incremental cached decode matches a full-prefix
 forward pass at `max|Δ| = 2.4e-07`, and identical stateless implementations agree bitwise. All
@@ -31,12 +32,14 @@ forward pass at `max|Δ| = 2.4e-07`, and identical stateless implementations agr
 against its own handwritten trigger. Those are qualification checks, not detection rates —
 whether a *generator* finds them under budget is a separate question, measured in M7.
 
-M4 (localization), M5 (reduction), M6 (reproduction export and the demo), and M7 (the
-benchmark and its generated report) are complete. `PROGRESS.md` tracks each milestone with the
-actual commands and their output.
+`PROGRESS.md` tracks each milestone with the actual commands and their output, including what
+was *not* verified. One acceptance item was never satisfied: **no screenshot, GIF, or video of a
+completed demo exists**, because no capture tooling or browser extension was available.
+`docs/RECORDING.md` has tested steps for producing one. The viewer's render path is executed by
+tests; its appearance has never been seen.
 
 The full run (202 declared trials, 80.4s on an Apple M3, CPU, 4 threads) detected all 160
-qualified mutant/seed/generator trials within budget, produced 0 false positives on 2,560
+qualified mutant/seed/generator trials within budget, produced **0/2560** false positives on
 known-good cases, localized every stable failure to an aligned checkpoint, and verified 8/8
 exported reproductions in a clean room. The two reducers reached the **same** minimal size on
 all 16 paired cases; ddmin's advantage is cost, at a median 6.2x fewer predicate queries than
@@ -119,6 +122,19 @@ evallens export  --failure artifacts/reduced/failure.json --out artifacts/repro
 `compare` exits 0 on PASS, 1 on a stable FAIL, and 2 for anything else — a crash, an invalid
 input, or an unstable result never gets counted as a detection.
 
+Reproduce the published measurements (about 80 seconds for the full preset):
+
+```bash
+evallens bench  --preset smoke --out artifacts/runs/smoke   # fast pilot
+evallens bench  --preset full  --out artifacts/runs/full --config configs/cpu.toml
+evallens report artifacts/runs/full --out RESULTS.md
+```
+
+`bench` and `report` need a repository checkout: `bench/` is deliberately not part of the
+installed package, so the shipped search code cannot import the fault corpus even by accident.
+`report` refuses to write a headline table from a dirty working tree — a number produced from
+uncommitted source is not reproducible by anyone.
+
 ## How it works
 
 **The fixture** is a small pre-normalized decoder-only transformer: 2 layers, width 64, 4
@@ -153,9 +169,9 @@ class of bug the oracle exists to catch.
 on replay is `UNSTABLE` and stays visible in the report.
 
 **Localization compares every aligned checkpoint — no binary search.** Bisection needs the
-"diverged" predicate to be monotone along the traversal, and measurably it is not: 10 of the
-16 injected fault variants have a checkpoint that returns inside tolerance after an earlier
-one left it. The result is called the *earliest observed divergence*, which is evidence about
+"diverged" predicate to be monotone along the traversal, and measurably it is not: in the
+published run, **108 of 160** stable failures reconverge, with a checkpoint returning inside
+tolerance after an earlier one left it. The result is called the *earliest observed divergence*, which is evidence about
 where a difference becomes visible at the exposed checkpoints — not proof of root cause.
 
 **Reduction is signature-preserving and blind.** A transformation is accepted only if the
@@ -173,8 +189,22 @@ Not supported and not claimed: arbitrary `torch.compile` graph debugging, quanti
 equivalence, automatic source repair, distributed execution, or production serving. MPS and
 pretrained-model adapters are extensions; the primary result does not depend on either.
 
+[`docs/SCOPE.md`](docs/SCOPE.md) has the full boundary, including the three limitations most
+likely to be over-read: the corpus is saturated and cannot rank the two generators, ddmin ties
+the greedy baseline on size, and every fault measured is one this project injected.
+
 ## Documents
 
+- [`RESULTS.md`](RESULTS.md) — the generated benchmark report; every figure comes from raw records
+- [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) — how the pipeline works, and the four
+  decisions where the obvious implementation was wrong
+- [`docs/SCOPE.md`](docs/SCOPE.md) — what is supported, what is not, and how to read the numbers
+- [`docs/INTERVIEW_GUIDE.md`](docs/INTERVIEW_GUIDE.md) — what to be able to explain, and the
+  questions to answer before claiming to
+- [`docs/RECORDING.md`](docs/RECORDING.md) — tested steps for capturing a demo recording; the
+  media task itself is **incomplete** and no screenshot or GIF exists
+- [`docs/demo-transcript.txt`](docs/demo-transcript.txt) — verbatim captured output of a real run
 - [`SPEC.md`](SPEC.md) — the resolved technical contract, and why each design choice was made
 - [`PROGRESS.md`](PROGRESS.md) — actual milestone state, commands, output, and limitations
 - [`CLAUDE.md`](CLAUDE.md) — working conventions and the project's non-negotiables
+- [`examples/reproductions/`](examples/reproductions/) — a real exported reproduction package

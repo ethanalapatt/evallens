@@ -34,6 +34,7 @@ from __future__ import annotations
 
 import json
 import statistics
+import sys
 from collections.abc import Sequence
 from dataclasses import dataclass
 from pathlib import Path
@@ -959,9 +960,15 @@ def main(argv: Sequence[str] | None = None) -> int:
     parser.add_argument("--metrics", default=None, help="Also write computed metrics as JSON.")
     args = parser.parse_args(argv)
 
-    code, _ = generate(
-        args.run_dir, args.out, allow_dirty=args.allow_dirty, metrics_path=args.metrics
-    )
+    try:
+        code, _ = generate(
+            args.run_dir, args.out, allow_dirty=args.allow_dirty, metrics_path=args.metrics
+        )
+    except ReportError as exc:
+        # A malformed or absent run directory is a usage error, not a crash. Printing a
+        # traceback here would bury the one line that says what to fix.
+        print(f"cannot generate a report: {exc}", file=sys.stderr)
+        return 2
     return code
 
 

@@ -27,7 +27,16 @@ def test_every_published_command_exists() -> None:
     parser = build_parser()
     actions = [a for a in parser._actions if a.dest == "command"]
     assert actions, "no subcommands registered"
-    assert set(actions[0].choices) == {"doctor", "demo", "compare", "reduce", "export", "view"}
+    assert set(actions[0].choices) == {
+        "doctor",
+        "demo",
+        "compare",
+        "reduce",
+        "export",
+        "bench",
+        "report",
+        "view",
+    }
 
 
 @pytest.mark.parametrize("command", ["doctor", "demo", "compare", "reduce", "export", "view"])
@@ -327,3 +336,60 @@ def test_the_viewer_never_hardcodes_a_measurement() -> None:
     assert "not recorded" in source, "the viewer must have an explicit missing-value marker"
     for forbidden in ("Math.random", "sampleData", "exampleRecord", "0.95", "99%"):
         assert forbidden not in source, f"viewer.js contains {forbidden!r}"
+
+
+# --- bench and report delegation ------------------------------------------------------------
+
+
+def test_bench_rejects_an_unknown_preset_and_names_the_real_ones(capsys) -> None:
+    code = main(["bench", "--preset", "no-such-preset", "--out", "unused"])
+    assert code == 2
+    err = capsys.readouterr().err
+    assert "no-such-preset" in err
+    assert "smoke" in err and "full" in err
+
+
+def test_bench_and_report_run_a_real_smoke_study_end_to_end(tmp_path) -> None:
+    """The two commands the README gives a reviewer, on an actual (tiny) study.
+
+    This is the only test that runs the benchmark through the CLI rather than through
+    `bench.run` directly, so it is what catches a delegation bug -- a dropped flag, or a
+    `bench` package the console script cannot import.
+    """
+    run_dir = tmp_path / "smoke"
+    assert main(["bench", "--preset", "smoke", "--out", str(run_dir), "--quiet"]) == 0
+    manifest = json.loads((run_dir / "manifest.json").read_text())
+    assert manifest["synthetic"] is False
+    assert manifest["expected_trial_ids"], "the trial matrix must be frozen before the run"
+
+    out = tmp_path / "SMOKE.md"
+    metrics = tmp_path / "metrics.json"
+    # --allow-dirty because a test run is made from whatever tree the developer has; the
+    # published RESULTS.md is generated without it, which is what makes it publishable.
+    code = main(
+        ["report", str(run_dir), "--out", str(out), "--allow-dirty", "--metrics", str(metrics)]
+    )
+    assert code == 0
+    text = out.read_text()
+    assert "injected" in text.lower()
+    assert json.loads(metrics.read_text())["detection"]["trials"] > 0
+
+
+def test_report_refuses_a_run_directory_that_is_not_one(tmp_path, capsys) -> None:
+    empty = tmp_path / "empty"
+    empty.mkdir()
+    assert main(["report", str(empty), "--out", str(tmp_path / "x.md")]) != 0
+    assert not (tmp_path / "x.md").exists()
+
+
+def test_the_checkout_root_is_found_from_a_subdirectory(monkeypatch, tmp_path) -> None:
+    """`bench` is not installed, so the CLI locates it relative to the working directory."""
+    from evallens.cli import _checkout_root
+
+    monkeypatch.chdir(Path(__file__).parent)
+    root = _checkout_root()
+    assert root is not None
+    assert (root / "bench" / "run.py").is_file()
+
+    monkeypatch.chdir(tmp_path)
+    assert _checkout_root() is None
